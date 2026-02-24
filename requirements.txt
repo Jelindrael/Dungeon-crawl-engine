@@ -1,0 +1,3 @@
+# Dungeon Crawl Engine - Dependencies
+# No external dependencies required - uses Python stdlib only
+# Python >= 3.8

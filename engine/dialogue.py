@@ -182,8 +182,8 @@ class DialogueNode:
 @dataclass
 class DialogueTree:
     dialogue_id: str
-    title:       str
     start_node:  str
+    title:       str                     = ""
     nodes:       Dict[str, DialogueNode] = field(default_factory=dict)
 
     def get_node(self, node_id: str) -> Optional[DialogueNode]:

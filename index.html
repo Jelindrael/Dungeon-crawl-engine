@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dungeon Crawl Engine</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <canvas id="main-canvas" width="1280" height="720"></canvas>
+
+  <!-- Engine core (order matters – dependencies first) -->
+  <script src="js/engine/palette.js"></script>
+  <script src="js/engine/coc.js"></script>
+  <script src="js/engine/tilemap.js"></script>
+  <script src="js/engine/sprite.js"></script>
+  <script src="js/engine/dialogue.js"></script>
+  <script src="js/engine/scene.js"></script>
+  <script src="js/engine/game_state.js"></script>
+  <script src="js/engine/renderer.js"></script>
+
+  <!-- Editors -->
+  <script src="js/editor/palette_chooser.js"></script>
+  <script src="js/editor/sprite_editor.js"></script>
+  <script src="js/editor/map_editor.js"></script>
+  <script src="js/editor/dialogue_editor.js"></script>
+
+  <!-- Demo game content -->
+  <script src="js/games/demo/content.js"></script>
+
+  <!-- Launcher (must be last) -->
+  <script src="js/main.js"></script>
+</body>
+</html>

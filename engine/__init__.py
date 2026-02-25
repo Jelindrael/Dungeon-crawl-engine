@@ -1,92 +1,78 @@
 """
-Dungeon Crawl Engine
-====================
+Dungeon Crawl Engine – Graphical edition
+=========================================
 
-A two-color, text-focused TTRPG dungeon crawl game engine.
-
-Key classes:
-    GameEngine      – main game loop and state manager
-    Character       – player/NPC with D&D-style attributes and skills
-    Dice            – polyhedral dice rolling (d4-d20, skill checks)
-    Scene           – narrative location with choices and effects
-    Effect          – game-state mutation (goto, give_item, damage, ...)
-    Choice          – player option within a scene
-    SkillCheck      – d20 vs DC check embedded in a choice
-    Enemy           – combat adversary
-    Item            – inventory item definition
-    ItemRegistry    – global item lookup
-    SceneRegistry   – global scene lookup
-    DungeonMap      – ASCII tile-based dungeon map
-    Renderer        – two-color ANSI terminal renderer
-    Theme           – color theme (GREEN, AMBER, CYAN)
+A two-color pixel graphics TTRPG dungeon crawl engine using pygame.
+Ruleset: Call of Cthulhu 7th Edition.
 
 Quick start::
 
     from engine import (
-        GameEngine, Scene, Choice, Effect,
-        Item, ItemRegistry, SceneRegistry,
+        GameRenderer, GameState, Investigator,
+        Scene, Choice, Effect, SceneRegistry,
     )
+    from engine.palette import PRESETS
 
-    ItemRegistry.register(Item("torch", "Torch", "Lights the way.", item_type="light"))
+    # 1. Register scenes
+    SceneRegistry.register(Scene(
+        scene_id="start",
+        title="The Arkham Hotel",
+        description="A dreary room. Rain streaks the window.",
+        choices=[
+            Choice.go("Step outside", "street"),
+        ],
+    ))
 
-    SceneRegistry.register_many([
-        Scene(
-            scene_id="start",
-            title="The Cave Entrance",
-            description="You stand before a dark cave. Torchlight flickers inside.",
-            choices=[
-                Choice.go("Enter the cave", "inside"),
-                Choice.go("Turn back home", "ending_coward"),
-            ],
-        ),
-        Scene(
-            scene_id="inside",
-            title="Inside the Cave",
-            description="It is pitch black. You are likely to be eaten by a grue.",
-            choices=[
-                Choice.go("Retreat to safety", "start"),
-            ],
-            on_enter=[Effect.gain_xp(10)],
-        ),
-        Scene(
-            scene_id="ending_coward",
-            title="Home Again",
-            description="You return home without glory.",
-            on_enter=[Effect.victory("A safe, if uneventful, ending.")],
-        ),
-    ])
+    # 2. Create investigator
+    inv = Investigator.create("Alice Marsh", occupation="Reporter")
 
-    GameEngine(start_scene="start", game_title="MY CAVE ADVENTURE").run()
+    # 3. Create game state + renderer and run
+    gs = GameState(inv, start_scene="start")
+    renderer = GameRenderer(gs, palette=PRESETS["amber"],
+                            game_title="DARK ARKHAM")
+    renderer.run()
 """
 
-from .core      import GameEngine
-from .character import Character, ATTRIBUTES, SKILL_ATTRIBUTES
-from .dice      import Dice, RollResult
-from .scene     import Scene, Choice, SkillCheck, Effect, EffectType, Requirement, SceneRegistry
-from .inventory import Item, ItemRegistry, Inventory, ItemType
-from .combat    import Enemy, CombatEngine, CombatResult
-from .dungeon   import DungeonMap, Tile, MapTemplates
-from .renderer  import Renderer, Theme, ANSI
+from .coc import (
+    Investigator, build_premade, PREMADE_INVESTIGATORS,
+    check_skill, opposed_check, sanity_check, SuccessLevel, CheckResult,
+    Combatant, CombatAction, resolve_combat, CombatRound,
+    roll_all_characteristics, CHARACTERISTIC_NAMES,
+    BASE_SKILLS,
+)
+from .palette  import Palette, PRESETS, get_preset, list_preset_names, DEFAULT
+from .scene    import Scene, Choice, SkillCheck, Effect, FX, Requirement, SceneRegistry
+from .dialogue import (
+    DialogueTree, DialogueNode, DialogueChoice, DialogueSkillCheck,
+    DialogueRequirement, DialogueRegistry,
+)
+from .tilemap  import TileMap, MapEntity, TILE_DEFS
+from .sprite   import Sprite, SpriteFrame, Illustration, SpriteRegistry, import_png
+from .game_state import GameState, Mode
+from .renderer import GameRenderer
 
-__version__ = "1.0.0"
-__author__  = "Dungeon Crawl Engine"
+__version__ = "2.0.0"
 
 __all__ = [
-    # Core
-    "GameEngine",
-    # Character
-    "Character", "ATTRIBUTES", "SKILL_ATTRIBUTES",
-    # Dice
-    "Dice", "RollResult",
+    # CoC rules
+    "Investigator", "build_premade", "PREMADE_INVESTIGATORS",
+    "check_skill", "opposed_check", "sanity_check",
+    "SuccessLevel", "CheckResult",
+    "Combatant", "CombatAction", "resolve_combat", "CombatRound",
+    "roll_all_characteristics", "CHARACTERISTIC_NAMES", "BASE_SKILLS",
+    # Palette
+    "Palette", "PRESETS", "get_preset", "list_preset_names", "DEFAULT",
     # Scene / narrative
-    "Scene", "Choice", "SkillCheck", "Effect", "EffectType",
-    "Requirement", "SceneRegistry",
-    # Items
-    "Item", "ItemRegistry", "Inventory", "ItemType",
-    # Combat
-    "Enemy", "CombatEngine", "CombatResult",
-    # Dungeon map
-    "DungeonMap", "Tile", "MapTemplates",
+    "Scene", "Choice", "SkillCheck", "Effect", "FX", "Requirement", "SceneRegistry",
+    # Dialogue
+    "DialogueTree", "DialogueNode", "DialogueChoice", "DialogueSkillCheck",
+    "DialogueRequirement", "DialogueRegistry",
+    # Map
+    "TileMap", "MapEntity", "TILE_DEFS",
+    # Sprite
+    "Sprite", "SpriteFrame", "Illustration", "SpriteRegistry", "import_png",
+    # Game state
+    "GameState", "Mode",
     # Renderer
-    "Renderer", "Theme", "ANSI",
+    "GameRenderer",
 ]

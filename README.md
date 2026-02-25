@@ -1,306 +1,68 @@
 # Dungeon Crawl Engine
 
-A two-color, text-focused TTRPG dungeon crawl game engine written in Python.
+A two-color pixel-art dungeon crawl game engine written in Python with pygame,
+using **Call of Cthulhu 7th Edition** TTRPG rules.
 
-Build old-school dungeon crawlers that run in any terminal, with a strong emphasis on
-narrative choices, TTRPG mechanics (attributes, skill checks, dice), and ASCII dungeon
-maps rendered in two vivid colors on a black background.
-
-```
-═══════════════════════════════════════════════════════════════════════════
- THE DUNGEON OF AELORIA                    HP: ██████░░░░ 6/10  AC:13  GP:5
- Aryn the Rogue                                                    Lvl 1 Rogue
-═══════════════════════════════════════════════════════════════════════════
- ENTRANCE HALL
-
-  #########    You stand in a rectangular chamber of ancient stone.
-  #.......#    Crumbled pillars line the walls, and goblin graffiti
-  #.O...O.#    mars the carved reliefs. A crude campfire smoulders in
-  #...@...#    one corner. Two doorways lead further into the dungeon:
-  #.......#    a heavy wooden door to the north (the guard room) and
-  ###+#####    a narrow crack in the eastern wall.
-
-─────────────────────────────────────────────────────────────────────────
- STR:10(+0)  DEX:17(+3)  CON:12(+1)  INT:13(+1)  WIS:11(+0)  CHA:12(+1)
-─────────────────────────────────────────────────────────────────────────
- WHAT DO YOU DO?
-  [1] Go north through the wooden door (toward the guard room)
-  [2] Squeeze through the crack in the eastern wall  [Athletics DC 12]
-  [3] Examine the goblin graffiti  [History DC 11]
-  [4] Search the campfire area  [Perception DC 10]
-  [5] Retreat to the dungeon entrance
-```
+Inspired by the aesthetic of games like *Cyclopean* — monochrome phosphor-screen
+rendering, hand-crafted pixel art, and atmospheric investigative gameplay.
 
 ---
 
 ## Features
 
-### TTRPG Mechanics
-- **6 Core attributes** – STR, DEX, CON, INT, WIS, CHA (D&D 5e-style)
-- **Attribute modifiers** – `(score − 10) / 2`
-- **18 skills** – each linked to a governing attribute, with proficiency bonus support
-- **Skill checks** – `d20 + modifier + proficiency` vs Difficulty Class
-- **Saving throws** – attribute-based, with proficiency support
-- **Advantage/Disadvantage** – roll twice, take best/worst
-- **Critical hits** (nat 20) and fumbles (nat 1)
-- **XP & Leveling** – D&D 5e XP thresholds, proficiency bonus scaling
-
-### Dice System (`engine.Dice`)
-```python
-from engine import Dice
-
-Dice.d20(modifier=3)                        # 1d20+3
-Dice.roll(sides=8, count=2, modifier=-1)    # 2d8-1
-Dice.parse("3d6+2")                         # parse notation
-Dice.advantage(20, modifier=2)              # roll twice, take higher
-result, success = Dice.skill_check(modifier=5, dc=14)
-Dice.roll_stats()                           # 4d6 drop lowest x6
-```
-
-### Scene & Narrative System
-Scenes are the core building block. Each scene has a description, optional ASCII map,
-and a list of player choices:
-
-```python
-from engine import Scene, Choice, Effect, SkillCheck, Requirement, SceneRegistry
-
-SceneRegistry.register(Scene(
-    scene_id="dark_corridor",
-    title="A Dark Corridor",
-    description="The passage stretches ahead, black as pitch.",
-    ascii_map="""
-########
-#......#
-#..@...#
-#......#
-########""",
-    choices=[
-        # Simple navigation
-        Choice.go("Press forward", "next_room"),
-
-        # Gated by item requirement
-        Choice(
-            text="Light your torch and look around",
-            effects=[
-                Effect.say("The torchlight reveals a hidden door!"),
-                Effect.set_flag("found_door"),
-            ],
-            requirement=Requirement(has_item="torch"),
-        ),
-
-        # Skill check with branching outcomes
-        Choice.checked(
-            text="Listen carefully  [Perception DC 12]",
-            skill="Perception",
-            dc=12,
-            on_success=[
-                Effect.say("You hear breathing ahead – something is waiting."),
-                Effect.set_flag("heard_enemy"),
-            ],
-            on_failure=[
-                Effect.say("Only silence."),
-            ],
-        ),
-    ],
-))
-```
-
-### Effects (Game State Mutations)
-| Effect | Description |
-|---|---|
-| `Effect.goto(scene_id)` | Navigate to a scene |
-| `Effect.give_item(item_id)` | Add item to inventory |
-| `Effect.remove_item(item_id)` | Remove item |
-| `Effect.damage(amount, dice)` | Deal damage to player |
-| `Effect.heal(amount, dice)` | Restore player HP |
-| `Effect.give_gold(amount)` | Award gold |
-| `Effect.set_flag(key, value)` | Set story flag |
-| `Effect.gain_xp(amount)` | Award experience |
-| `Effect.combat(enemies)` | Start a combat encounter |
-| `Effect.say(message)` | Display a message |
-| `Effect.game_over(message)` | Trigger game over |
-| `Effect.victory(message)` | Trigger victory screen |
-
-### Choice Requirements
-Control which choices are visible using `Requirement`:
-
-```python
-Requirement(has_item="rope")          # must carry item
-Requirement(no_flag="door_locked")    # flag must be absent
-Requirement(has_flag="met_wizard")    # flag must be set
-Requirement(min_attribute={"STR":15}) # min attribute score
-Requirement(min_gold=50)              # afford something
-Requirement(min_level=3)              # character level gate
-```
-
-### Combat System
-Turn-based combat with initiative, attack rolls, and damage:
-
-```python
-from engine import Enemy, Effect
-
-# Define an enemy
-wolf = Enemy(
-    name="Grey Wolf",
-    max_hp=11, armor_class=13,
-    attack_bonus=2, damage_dice="2d4+2",
-    xp_reward=100,
-    loot_table=["wolf_pelt"],
-)
-
-# Trigger from a scene choice
-Choice(
-    text="Fight the wolf!",
-    effects=[Effect.combat([wolf])],
-)
-```
-
-Combat features:
-- Initiative (d20 + DEX modifier)
-- Attack roll (d20 + attack_bonus vs AC)
-- Critical hits (nat 20 = double damage dice)
-- Use items mid-combat
-- Flee attempt (Athletics/Acrobatics DC 13)
-- Auto-loot on victory
-
-### Items
-```python
-from engine import Item, ItemRegistry, ItemType
-
-ItemRegistry.register(Item(
-    item_id="magic_sword",
-    name="Sword of Flames",
-    description="A blade wreathed in eternal fire.",
-    item_type=ItemType.WEAPON,
-    value=150,
-    properties={
-        "damage_dice": "1d8+2",
-        "attack_bonus": 2,
-    },
-))
-```
-
-### ASCII Dungeon Maps
-Define maps as multiline strings using standard tile characters:
-
-| Char | Tile |
-|---|---|
-| `#` | Wall |
-| `.` | Floor |
-| `@` | Player |
-| `+` | Closed door |
-| `/` | Open door |
-| `>` | Stairs down |
-| `<` | Stairs up |
-| `$` | Chest |
-| `!` | Item |
-| `^` | Trap |
-| `~` | Water |
-| `g`, `o`, `T`… | Enemy glyphs |
-
-### Two-Color Themes
-```python
-from engine import Theme
-
-Theme.GREEN()   # classic green phosphor monitor
-Theme.AMBER()   # amber monitor look
-Theme.CYAN()    # matrix-style cyan
-```
+- **Two-color rendering** — every element drawn with exactly two colors (bg + fg),
+  with CRT scanline overlay and dithering for intermediate tones
+- **8 palette presets** — Phosphor Green, Amber, Cyan, White Phosphor, Red Alert,
+  Blue Terminal, Magenta, Neon Yellow
+- **Call of Cthulhu 7e rules** — d100 percentile system, Hard/Extreme/Fumble
+  success levels, bonus/penalty dice, Sanity mechanics, full Investigator sheets
+- **Scene/narrative graph** — Choice → Effect pipeline with skill checks,
+  item requirements, flag gates, SAN loss, and combat triggers
+- **Tile map system** — fog-of-war, entity placement, JSON persistence
+- **Pixel art sprite system** — 2-bit (0/1) frame animation, PNG import
+- **Dialogue tree system** — branching NPC conversations with skill checks
+- **4 built-in editor tools** — Map Editor, Sprite Editor, Dialogue Editor,
+  Palette Chooser (all pygame-based)
+- **Demo scenario** — "The Blackwood Manor Affair", a complete CoC investigation
 
 ---
 
-## Running the Demo Game
+## Requirements
 
-**The Dungeon of Aeloria** – a short dungeon crawl adventure:
+```
+pygame >= 2.1.0
+Pillow          # optional, for PNG import in sprite editor
+```
+
+Install:
 
 ```bash
-python games/demo/run.py
+pip install pygame
+pip install Pillow   # optional
 ```
-
-The demo features:
-- 3 character classes (Warrior, Rogue, Mage) with distinct stats
-- 12 scenes across Millhaven town and the dungeon
-- Skill checks: Perception, Stealth, Athletics, Arcana, History, Persuasion, Intimidation
-- Multiple paths through the dungeon (combat, stealth, persuasion)
-- Combat encounters (Goblin, Scout, Guard, Hobgoblin, Chieftain boss)
-- 17 item types (weapons, armor, potions, keys, quest items)
-- Story flags that persist across scenes
-- Save/load game
 
 ---
 
-## Quick Start: Build Your Own Game
+## Quick Start
 
-```python
-# my_game.py
-from engine import (
-    GameEngine, Scene, Choice, Effect, SkillCheck,
-    Item, ItemRegistry, SceneRegistry, Enemy, Theme,
-)
+```bash
+# Launch the main menu
+python main.py
 
-# 1. Register items
-ItemRegistry.register(Item(
-    "silver_key", "Silver Key", "An ornate silver key.",
-    properties={"consumable": False},
-))
+# Jump straight into the demo game
+python main.py play
 
-# 2. Register scenes
-SceneRegistry.register_many([
-    Scene(
-        scene_id="start",
-        title="The Village",
-        description="You stand in a sleepy village. A dark forest looms to the north.",
-        choices=[
-            Choice.go("Enter the forest", "forest"),
-            Choice.go("Visit the blacksmith", "blacksmith"),
-        ],
-    ),
-    Scene(
-        scene_id="blacksmith",
-        title="The Blacksmith",
-        description="The smith hands you a silver key. 'Opens the forest shrine,' he says.",
-        on_enter=[Effect.give_item("silver_key")],
-        choices=[Choice.go("Head to the forest", "forest")],
-    ),
-    Scene(
-        scene_id="forest",
-        title="The Dark Forest",
-        description="Ancient trees close in. A stone shrine stands ahead, locked tight.",
-        choices=[
-            Choice(
-                text="Unlock the shrine with the silver key",
-                effects=[
-                    Effect.remove_item("silver_key"),
-                    Effect.victory("The shrine opens, flooding the forest with light. You win!"),
-                ],
-                requirement=__import__('engine').Requirement(has_item="silver_key"),
-            ),
-            Choice.go("Return to the village", "start"),
-        ],
-    ),
-])
+# Open the map editor
+python main.py map
 
-# 3. Define character classes
-CLASSES = {
-    "hero": {
-        "display_name": "Hero",
-        "description": "A brave adventurer.",
-        "attributes": {"STR":14,"DEX":12,"CON":13,"INT":10,"WIS":10,"CHA":12},
-        "max_hp": 10, "armor_class": 13, "attack_bonus": 3,
-        "damage_dice": "1d6+2",
-        "proficiencies": ["Athletics", "Perception"],
-        "save_proficiencies": ["STR", "CON"],
-        "gold": 10,
-    }
-}
+# Open the pixel art / sprite editor
+python main.py sprite
 
-# 4. Run
-GameEngine(
-    start_scene="start",
-    game_title="THE FOREST SHRINE",
-    theme=Theme.AMBER(),
-    classes=CLASSES,
-).run()
+# Open the node-based dialogue editor
+python main.py dialogue
+
+# Open the palette chooser
+python main.py palette
 ```
 
 ---
@@ -309,26 +71,241 @@ GameEngine(
 
 ```
 Dungeon-crawl-engine/
+├── main.py                    # Main launcher (menu → game or editors)
+├── requirements.txt
+│
 ├── engine/
-│   ├── __init__.py      # public API
-│   ├── core.py          # GameEngine – main loop, effect processor, save/load
-│   ├── scene.py         # Scene, Choice, SkillCheck, Effect, Requirement, SceneRegistry
-│   ├── character.py     # Character – attributes, skills, HP, leveling
-│   ├── dice.py          # Dice – d4-d20, skill checks, advantage/disadvantage
-│   ├── combat.py        # CombatEngine, Enemy – turn-based combat
-│   ├── inventory.py     # Item, ItemRegistry, Inventory
-│   ├── dungeon.py       # DungeonMap, Tile, MapTemplates
-│   └── renderer.py      # Renderer, Theme – two-color ANSI terminal UI
+│   ├── __init__.py            # Public API
+│   ├── palette.py             # Two-color palette system + 8 presets
+│   ├── coc.py                 # CoC 7e rules: dice, skill checks, Investigator
+│   ├── tilemap.py             # Tile map + fog-of-war + entity placement
+│   ├── sprite.py              # Pixel art sprite (2-bit frame animation)
+│   ├── dialogue.py            # Dialogue tree system
+│   ├── scene.py               # Scene/narrative graph + Effect vocabulary
+│   ├── game_state.py          # Central game state + effect processor
+│   ├── renderer.py            # Main pygame renderer (Cyclopean-style layout)
+│   └── ui/
+│       ├── layout.py          # Panel geometry constants (1280×720)
+│       ├── font.py            # Font cache + render helpers
+│       └── components.py      # Button, DPad, HP bars, dithering utilities
+│
+├── editor/
+│   ├── palette_chooser.py     # Pygame palette chooser with RGB sliders
+│   ├── sprite_editor.py       # Pixel art editor (pencil/eraser/fill, undo/redo)
+│   ├── map_editor.py          # Tile map editor (paint, entities, resize)
+│   └── dialogue_editor.py     # Node-based dialogue editor (drag & drop)
+│
 ├── games/
 │   └── demo/
-│       ├── content.py   # All demo game content (scenes, items, enemies, classes)
-│       └── run.py       # Entry point for the demo
-└── README.md
+│       ├── content.py         # "The Blackwood Manor Affair" — scenes + dialogues
+│       └── run.py             # Demo game entry point (character select + renderer)
+│
+└── assets/
+    ├── palettes/              # Saved palette JSON files
+    ├── sprites/               # Saved sprite JSON files
+    ├── maps/                  # Saved map JSON files
+    └── dialogues/             # Saved dialogue tree JSON files
 ```
 
 ---
 
-## Requirements
+## Window Layout (1280×720)
 
-- Python 3.8+
-- No external dependencies (uses stdlib only: `random`, `json`, `os`, `textwrap`, `shutil`)
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    BANNER (title + scene name)                  │
+├──────────────┬──────────────────────────────────┬──────────────┤
+│ LEFT PANEL   │                                  │ RIGHT PANEL  │
+│              │         VIEWPORT                 │              │
+│ · Location   │    (tilemap or illustration)     │ · Menu btns  │
+│ · Mini-map   │                                  │ · D-Pad      │
+│ · Items      ├──────────────────────────────────┤              │
+│ · HP/SAN/MP  │       TEXT LOG + CHOICES         │              │
+│ · Stats      │                                  │              │
+└──────────────┴──────────────────────────────────┴──────────────┘
+```
+
+Exact pixel bounds:
+- Banner:   `(0,0)` → `1280×60`
+- Left:     `(0,60)` → `200×660`
+- Viewport: `(200,60)` → `920×420`
+- Log:      `(200,480)` → `920×240`
+- Right:    `(1120,60)` → `160×660`
+
+---
+
+## CoC 7e Rules Summary
+
+### Characteristics
+`STR` `CON` `SIZ` `DEX` `APP` `INT` `POW` `EDU`
+
+### Derived Stats
+| Stat | Formula |
+|------|---------|
+| HP | `(CON + SIZ) / 10` |
+| MP | `POW / 5` |
+| SAN | `POW` |
+| Luck | `3d6 × 5` |
+
+### Skill Checks (d100)
+| Roll | Result |
+|------|--------|
+| ≤ skill / 5 | **Extreme Success** |
+| ≤ skill / 2 | **Hard Success** |
+| ≤ skill | **Regular Success** |
+| > skill | **Failure** |
+| ≥ 96 (skill ≤ 50) or = 100 | **Fumble** |
+
+**Bonus dice** — roll an extra tens die, take the lower result.
+**Penalty dice** — roll an extra tens die, take the higher result.
+
+### Sanity
+- `SAN` = `POW` at character creation (max 99)
+- Failing a SAN check costs `fail_dice` sanity; passing costs `success_dice`
+- Losing ≥ 5 SAN in one check = temporary insanity
+- Reaching 0 SAN = permanent insanity (game over)
+
+---
+
+## Editor Controls
+
+### Map Editor (`python main.py map`)
+| Input | Action |
+|-------|--------|
+| Left click | Paint selected tile |
+| Right click | Erase (set to floor) |
+| Middle drag | Pan canvas |
+| `+` / `-` | Zoom in/out |
+| `E` | Toggle entity placement mode |
+| `Del` | Remove entity under cursor |
+| `Ctrl+S` | Save map JSON |
+| `Ctrl+O` | Load map JSON |
+| `Ctrl+N` | New blank map |
+| `Ctrl+R` | Resize map |
+
+### Sprite Editor (`python main.py sprite`)
+| Input | Action |
+|-------|--------|
+| Left click | Draw foreground (1) |
+| Right click | Draw background (0) |
+| `P` / `E` / `F` | Pencil / Eraser / Fill |
+| `+` / `-` | Zoom in/out |
+| `N` | New animation frame |
+| `,` / `.` | Previous / Next frame |
+| `Ctrl+Z` / `Ctrl+Y` | Undo / Redo |
+| `Ctrl+S` | Save sprite JSON |
+| `Ctrl+O` | Open sprite JSON |
+| `Ctrl+I` | Import PNG (threshold conversion) |
+
+### Dialogue Editor (`python main.py dialogue`)
+| Input | Action |
+|-------|--------|
+| Left click node | Select node |
+| Drag node | Move node on canvas |
+| Double-click node | Edit text/speaker |
+| `N` | New node at cursor |
+| `C` | Add choice to selected node |
+| `Del` | Delete selected node |
+| Middle drag / Arrows | Pan canvas |
+| `Ctrl+S` | Save dialogue JSON |
+| `Ctrl+O` | Load dialogue JSON |
+
+### Palette Chooser (`python main.py palette`)
+Click a preset swatch or use the RGB sliders to customize foreground/background colors.
+
+---
+
+## Demo Scenario: The Blackwood Manor Affair
+
+A one-session CoC investigation set in Arkham, Massachusetts — October 1926.
+
+**Premise:** Professor Ellison has gone missing while researching an obscure
+pre-colonial cult at an isolated manor. The investigators must find him,
+uncover the truth about the manor's ritual chamber, and deal with the entity
+that slumbers behind a warded door.
+
+**Investigators (pre-made):**
+- Dr. Alice Hayes — Doctor (Medicine, Psychology, First Aid)
+- Prof. Harold Webb — Professor (Library Use, Occult, History)
+- Rita Caldwell — Reporter (Persuade, Fast Talk, Spot Hidden)
+- Jack Malone — Detective (Spot Hidden, Track, Fighting)
+
+**Key mechanics demonstrated:**
+- Library Use skill check to find research notes (+bonus die)
+- Spot Hidden to find Ellison's hidden satchel
+- Dialogue tree with Old Thomas (gardener NPC)
+- SAN loss on entering the ritual chamber
+- Occult skill check (with/without bonus die) for banishment
+- Push mechanic on failed incantation
+- Combat encounter with a Dimensional Shambler
+- Multiple endings: full victory, partial victory, consumed/game-over
+
+---
+
+## Writing Your Own Game
+
+### 1. Define scenes
+
+```python
+from engine.scene import Scene, Choice, Effect, SkillCheck
+
+scene = Scene(
+    scene_id="tavern",
+    title="The Rusty Anchor",
+    description="A fog-laden harbour tavern...",
+    choices=[
+        Choice.go("Go upstairs", "upstairs"),
+        Choice(
+            text="Ask the barkeep [Persuade]",
+            skill_check=SkillCheck(
+                skill="Persuade",
+                on_success=[Effect.give_item("Rumour"), Effect.goto("barkeep_talk")],
+                on_failure=[Effect.say("He ignores you."), Effect.goto("tavern")],
+            ),
+        ),
+    ],
+)
+```
+
+### 2. Register and run
+
+```python
+from engine.scene import SceneRegistry
+from engine.game_state import GameState
+from engine.renderer import GameRenderer
+from engine.coc import build_premade
+from engine.palette import PRESETS
+import pygame
+
+SceneRegistry.register(scene)
+investigator = build_premade("reporter")
+state = GameState(investigator, start_scene="tavern")
+state.enter_scene("tavern")
+
+pygame.init()
+renderer = GameRenderer(state, palette=PRESETS["amber"], game_title="MY GAME")
+renderer.run()
+```
+
+### 3. Effect vocabulary
+
+| Effect | Description |
+|--------|-------------|
+| `Effect.goto(scene_id)` | Navigate to another scene |
+| `Effect.give_item(name)` | Add item to inventory |
+| `Effect.remove_item(name)` | Remove item |
+| `Effect.damage(amount)` | Deal HP damage |
+| `Effect.heal(amount)` | Restore HP |
+| `Effect.san_loss("1d6", "1")` | SAN check (fail dice, success dice) |
+| `Effect.set_flag(key)` | Set a story flag |
+| `Effect.clear_flag(key)` | Clear a story flag |
+| `Effect.say(message)` | Add message to log |
+| `Effect.dialogue(dialogue_id)` | Start a dialogue tree |
+| `Effect.game_over(message)` | End the game (loss) |
+| `Effect.victory(message)` | End the game (win) |
+
+---
+
+## License
+
+MIT

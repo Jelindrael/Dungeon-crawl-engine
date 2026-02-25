@@ -1,195 +1,216 @@
 """
-Scene and narrative system for the Dungeon Crawl Engine.
+Scene / narrative system.
 
-A scene is the fundamental unit of gameplay: a location, situation, or moment
-that presents the player with a description and a set of choices.
+A Scene is a location or situation. It has:
+  - A title and description
+  - An optional tile map and/or illustration
+  - A list of player choices
+  - Entry effects
 
-Choices can require skill checks, items, or flags, and trigger cascading
-effects like moving to a new scene, giving/removing items, dealing damage, etc.
+Effects use a simple string-keyed vocabulary that GameState interprets.
 """
 from __future__ import annotations
+import json
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
-
-if TYPE_CHECKING:
-    from .character import Character
-    from .dungeon import DungeonMap
+from typing import Any, Dict, List, Optional
 
 
 # ---------------------------------------------------------------------------
-# Effect types
+# Effect vocabulary
 # ---------------------------------------------------------------------------
 
-class EffectType:
-    GOTO         = "goto"          # move to scene_id
-    GIVE_ITEM    = "give_item"     # add item_id to inventory
-    REMOVE_ITEM  = "remove_item"   # remove item_id from inventory
-    DAMAGE       = "damage"        # deal dice/amount damage to player
-    HEAL         = "heal"          # heal dice/amount HP
-    SET_FLAG     = "set_flag"      # set a story flag
-    CLEAR_FLAG   = "clear_flag"    # remove a story flag
-    GAIN_XP      = "gain_xp"      # award XP
-    GIVE_GOLD    = "give_gold"     # award gold
-    TAKE_GOLD    = "take_gold"     # deduct gold
-    COMBAT       = "combat"        # start a combat encounter
-    SAY          = "say"           # display a message line
-    GAME_OVER    = "game_over"     # player dies / game over
-    VICTORY      = "victory"       # player wins the game
+class FX:
+    """Effect type constants."""
+    GOTO        = "goto"
+    GIVE_ITEM   = "give_item"
+    REMOVE_ITEM = "remove_item"
+    DAMAGE      = "damage"
+    HEAL        = "heal"
+    SET_FLAG    = "set_flag"
+    CLEAR_FLAG  = "clear_flag"
+    GAIN_XP     = "gain_xp"
+    GIVE_GOLD   = "give_gold"
+    TAKE_GOLD   = "take_gold"
+    SAN_LOSS    = "san_loss"        # params: fail_dice, success_dice
+    COMBAT      = "combat"          # params: enemies (list of enemy dicts)
+    DIALOGUE    = "dialogue"        # params: dialogue_id
+    SAY         = "say"             # params: message
+    GAME_OVER   = "game_over"       # params: message
+    VICTORY     = "victory"         # params: message
+    SKILL_CHECK = "skill_check"     # inline skill check with branches
+    LOAD_MAP    = "load_map"        # params: map_id
+    SHOW_ART    = "show_art"        # params: illustration_id
 
 
 @dataclass
 class Effect:
-    """A single game-state mutation triggered by a choice or event."""
-    type: str
+    """A single game-state mutation."""
+    type:   str
     params: Dict[str, Any] = field(default_factory=dict)
 
-    # ---------------------------------------------------------------------------
-    # Factory helpers for readable scene authoring
-    # ---------------------------------------------------------------------------
-
+    # Factories
     @staticmethod
     def goto(scene_id: str) -> "Effect":
-        return Effect(EffectType.GOTO, {"scene_id": scene_id})
+        return Effect(FX.GOTO, {"scene_id": scene_id})
 
     @staticmethod
-    def give_item(item_id: str) -> "Effect":
-        return Effect(EffectType.GIVE_ITEM, {"item_id": item_id})
+    def give_item(name: str) -> "Effect":
+        return Effect(FX.GIVE_ITEM, {"name": name})
 
     @staticmethod
-    def remove_item(item_id: str) -> "Effect":
-        return Effect(EffectType.REMOVE_ITEM, {"item_id": item_id})
+    def remove_item(name: str) -> "Effect":
+        return Effect(FX.REMOVE_ITEM, {"name": name})
 
     @staticmethod
     def damage(amount: int = 0, dice: str = "") -> "Effect":
-        return Effect(EffectType.DAMAGE, {"amount": amount, "dice": dice})
+        return Effect(FX.DAMAGE, {"amount": amount, "dice": dice})
 
     @staticmethod
     def heal(amount: int = 0, dice: str = "") -> "Effect":
-        return Effect(EffectType.HEAL, {"amount": amount, "dice": dice})
+        return Effect(FX.HEAL, {"amount": amount, "dice": dice})
 
     @staticmethod
     def set_flag(key: str, value: Any = True) -> "Effect":
-        return Effect(EffectType.SET_FLAG, {"key": key, "value": value})
+        return Effect(FX.SET_FLAG, {"key": key, "value": value})
 
     @staticmethod
     def clear_flag(key: str) -> "Effect":
-        return Effect(EffectType.CLEAR_FLAG, {"key": key})
+        return Effect(FX.CLEAR_FLAG, {"key": key})
 
     @staticmethod
-    def gain_xp(amount: int) -> "Effect":
-        return Effect(EffectType.GAIN_XP, {"amount": amount})
+    def san_loss(fail_dice: str, success_dice: str = "0") -> "Effect":
+        return Effect(FX.SAN_LOSS, {"fail_dice": fail_dice, "success_dice": success_dice})
 
     @staticmethod
     def give_gold(amount: int) -> "Effect":
-        return Effect(EffectType.GIVE_GOLD, {"amount": amount})
+        return Effect(FX.GIVE_GOLD, {"amount": amount})
 
     @staticmethod
     def take_gold(amount: int) -> "Effect":
-        return Effect(EffectType.TAKE_GOLD, {"amount": amount})
-
-    @staticmethod
-    def combat(enemies: List[Any]) -> "Effect":
-        return Effect(EffectType.COMBAT, {"enemies": enemies})
+        return Effect(FX.TAKE_GOLD, {"amount": amount})
 
     @staticmethod
     def say(message: str) -> "Effect":
-        return Effect(EffectType.SAY, {"message": message})
+        return Effect(FX.SAY, {"message": message})
 
     @staticmethod
-    def game_over(message: str = "You have died.") -> "Effect":
-        return Effect(EffectType.GAME_OVER, {"message": message})
+    def game_over(message: str = "The darkness claims you.") -> "Effect":
+        return Effect(FX.GAME_OVER, {"message": message})
 
     @staticmethod
-    def victory(message: str = "Victory!") -> "Effect":
-        return Effect(EffectType.VICTORY, {"message": message})
+    def victory(message: str = "You have survived.") -> "Effect":
+        return Effect(FX.VICTORY, {"message": message})
+
+    @staticmethod
+    def dialogue(dialogue_id: str) -> "Effect":
+        return Effect(FX.DIALOGUE, {"dialogue_id": dialogue_id})
+
+    @staticmethod
+    def load_map(map_id: str) -> "Effect":
+        return Effect(FX.LOAD_MAP, {"map_id": map_id})
+
+    @staticmethod
+    def show_art(illustration_id: str) -> "Effect":
+        return Effect(FX.SHOW_ART, {"illustration_id": illustration_id})
+
+    def to_dict(self) -> dict:
+        return {"type": self.type, "params": self.params}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Effect":
+        return cls(type=d["type"], params=d.get("params", {}))
 
 
 # ---------------------------------------------------------------------------
-# Skill check within a choice
-# ---------------------------------------------------------------------------
-
-@dataclass
-class SkillCheck:
-    """
-    A dice-based check embedded in a Choice.
-
-    On success/failure, distinct effect lists are applied.
-    """
-    skill: str                         # e.g. "Perception", "Athletics"
-    dc: int                            # Difficulty Class
-    on_success: List[Effect] = field(default_factory=list)
-    on_failure: List[Effect] = field(default_factory=list)
-    advantage: bool = False
-    disadvantage: bool = False
-
-    def label(self) -> str:
-        """Short label for display, e.g. '[Perception DC 12]'."""
-        return f"[{self.skill} DC {self.dc}]"
-
-
-# ---------------------------------------------------------------------------
-# Choice requirement (gate)
+# Requirement gate
 # ---------------------------------------------------------------------------
 
 @dataclass
 class Requirement:
-    """
-    Defines when a choice is available to the player.
+    has_item:       Optional[str]        = None
+    no_item:        Optional[str]        = None
+    has_flag:       Optional[str]        = None
+    no_flag:        Optional[str]        = None
+    min_gold:       Optional[int]        = None
+    skill_check:    Optional[Dict[str, Any]] = None   # {"skill": "...", "on_success": [...], "on_failure": [...]}
+    min_skill:      Optional[Dict[str, int]] = None
 
-    All specified conditions must be true for the choice to appear.
-    """
-    has_item: Optional[str] = None          # must have this item
-    no_item: Optional[str] = None           # must NOT have this item
-    has_flag: Optional[str] = None          # flag must be set (truthy)
-    no_flag: Optional[str] = None           # flag must NOT be set
-    flag_value: Optional[Dict[str, Any]] = None  # {key: exact_value}
-    min_attribute: Optional[Dict[str, int]] = None  # {"STR": 15, ...}
-    min_level: Optional[int] = None
-    min_gold: Optional[int] = None
-    min_hp_ratio: Optional[float] = None    # min HP fraction (0.0-1.0)
-    max_hp_ratio: Optional[float] = None    # max HP fraction (0.0-1.0)
-
-    def is_met(self, character: "Character") -> bool:
-        """Return True if all conditions are satisfied."""
-        if self.has_item and not character.has_item(self.has_item):
+    def is_met(self, investigator) -> bool:
+        if self.has_item and not investigator.has_item(self.has_item):
             return False
-        if self.no_item and character.has_item(self.no_item):
+        if self.no_item and investigator.has_item(self.no_item):
             return False
-        if self.has_flag and not character.has_flag(self.has_flag):
+        if self.has_flag and not investigator.has_flag(self.has_flag):
             return False
-        if self.no_flag and character.has_flag(self.no_flag):
+        if self.no_flag and investigator.has_flag(self.no_flag):
             return False
-        if self.flag_value:
-            for k, v in self.flag_value.items():
-                if character.get_flag(k) != v:
+        if self.min_gold and investigator.cash < self.min_gold:
+            return False
+        if self.min_skill:
+            for skill, minimum in self.min_skill.items():
+                if investigator.skills.get(skill, 0) < minimum:
                     return False
-        if self.min_attribute:
-            for attr, minimum in self.min_attribute.items():
-                if character.get_attribute(attr) < minimum:
-                    return False
-        if self.min_level and character.level < self.min_level:
-            return False
-        if self.min_gold and character.gold < self.min_gold:
-            return False
-        if self.min_hp_ratio and character.hp_ratio < self.min_hp_ratio:
-            return False
-        if self.max_hp_ratio and character.hp_ratio > self.max_hp_ratio:
-            return False
         return True
 
     def hint(self) -> str:
-        """Human-readable hint about why this choice is gated."""
         parts = []
         if self.has_item:
-            parts.append(f"requires {self.has_item}")
-        if self.min_attribute:
-            for attr, val in self.min_attribute.items():
-                parts.append(f"{attr} {val}+")
-        if self.min_level:
-            parts.append(f"Level {self.min_level}+")
+            parts.append(f"Need: {self.has_item}")
         if self.min_gold:
-            parts.append(f"{self.min_gold} GP")
-        return ", ".join(parts) if parts else ""
+            parts.append(f"${self.min_gold}")
+        if self.min_skill:
+            for s, v in self.min_skill.items():
+                parts.append(f"{s} {v}%")
+        if self.has_flag:
+            parts.append(f"[{self.has_flag}]")
+        return ", ".join(parts)
+
+    def to_dict(self) -> dict:
+        return {k: v for k, v in self.__dict__.items() if v is not None}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Requirement":
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+
+
+# ---------------------------------------------------------------------------
+# Skill check embedded in a choice
+# ---------------------------------------------------------------------------
+
+@dataclass
+class SkillCheck:
+    skill:          str
+    on_success:     List[Effect]    = field(default_factory=list)
+    on_failure:     List[Effect]    = field(default_factory=list)
+    bonus_dice:     int             = 0     # positive = bonus, negative = penalty
+    push:           bool            = False
+
+    def label(self) -> str:
+        bonus = ""
+        if self.bonus_dice > 0:
+            bonus = f" +{self.bonus_dice}B"
+        elif self.bonus_dice < 0:
+            bonus = f" {self.bonus_dice}P"
+        return f"[{self.skill}{bonus}]"
+
+    def to_dict(self) -> dict:
+        return {
+            "skill": self.skill,
+            "on_success": [e.to_dict() for e in self.on_success],
+            "on_failure": [e.to_dict() for e in self.on_failure],
+            "bonus_dice": self.bonus_dice,
+            "push": self.push,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "SkillCheck":
+        return cls(
+            skill=d["skill"],
+            on_success=[Effect.from_dict(e) for e in d.get("on_success", [])],
+            on_failure=[Effect.from_dict(e) for e in d.get("on_failure", [])],
+            bonus_dice=d.get("bonus_dice", 0),
+            push=d.get("push", False),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -198,61 +219,59 @@ class Requirement:
 
 @dataclass
 class Choice:
-    """
-    A single player option within a scene.
+    text:        str
+    effects:     List[Effect]           = field(default_factory=list)
+    skill_check: Optional[SkillCheck]   = None
+    requirement: Optional[Requirement]  = None
+    key:         str                    = ""
 
-    Can have a requirement gate, an optional skill check, and
-    a list of effects that execute when chosen.
-    """
-    text: str
-    effects: List[Effect] = field(default_factory=list)
-    skill_check: Optional[SkillCheck] = None
-    requirement: Optional[Requirement] = None
-    key: str = ""  # auto-assigned by Scene if empty
-
-    def is_available(self, character: "Character") -> bool:
+    def is_available(self, investigator) -> bool:
         if self.requirement is None:
             return True
-        return self.requirement.is_met(character)
+        return self.requirement.is_met(investigator)
 
-    def display_text(self, character: "Character") -> str:
-        """
-        Return the choice text with appended hints about requirements
-        and skill checks.
-        """
+    def display_text(self, investigator) -> str:
         text = self.text
         if self.skill_check:
             text += f"  {self.skill_check.label()}"
-        if self.requirement and not self.requirement.is_met(character):
+        if self.requirement and not self.requirement.is_met(investigator):
             hint = self.requirement.hint()
-            text += f"  [Requires: {hint}]" if hint else "  [Unavailable]"
+            text += f"  [Locked: {hint}]" if hint else "  [Unavailable]"
         return text
 
-    # Convenience constructors
+    # Factories
     @staticmethod
     def go(text: str, scene_id: str, **kwargs) -> "Choice":
-        """Simple navigation choice."""
         return Choice(text=text, effects=[Effect.goto(scene_id)], **kwargs)
 
     @staticmethod
     def checked(
-        text: str,
-        skill: str,
-        dc: int,
-        on_success: List[Effect],
-        on_failure: List[Effect],
-        **kwargs,
+        text: str, skill: str,
+        on_success: List[Effect], on_failure: List[Effect], **kwargs
     ) -> "Choice":
-        """Choice that requires a skill check."""
         return Choice(
             text=text,
-            skill_check=SkillCheck(
-                skill=skill,
-                dc=dc,
-                on_success=on_success,
-                on_failure=on_failure,
-            ),
+            skill_check=SkillCheck(skill=skill, on_success=on_success, on_failure=on_failure),
             **kwargs,
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "text": self.text,
+            "effects": [e.to_dict() for e in self.effects],
+            "skill_check": self.skill_check.to_dict() if self.skill_check else None,
+            "requirement": self.requirement.to_dict() if self.requirement else None,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Choice":
+        sc  = SkillCheck.from_dict(d["skill_check"]) if d.get("skill_check") else None
+        req = Requirement.from_dict(d["requirement"]) if d.get("requirement") else None
+        return cls(
+            text=d["text"],
+            effects=[Effect.from_dict(e) for e in d.get("effects", [])],
+            skill_check=sc,
+            requirement=req,
         )
 
 
@@ -262,54 +281,74 @@ class Choice:
 
 @dataclass
 class Scene:
-    """
-    A single scene/location in the game.
+    scene_id:      str
+    title:         str
+    description:   str
+    choices:       List[Choice]     = field(default_factory=list)
+    on_enter:      List[Effect]     = field(default_factory=list)
+    illustration:  Optional[str]    = None    # sprite/illustration id
+    map_id:        Optional[str]    = None    # tile map id
+    ambient:       Optional[str]    = None    # ambient sound name
+    tags:          List[str]        = field(default_factory=list)
 
-    scene_id must be unique across the game.
-    """
-    scene_id: str
-    title: str
-    description: str                          # supports {player.name} substitution
-    ascii_map: Optional[str] = None           # multiline string OR DungeonMap
-    choices: List[Choice] = field(default_factory=list)
-    on_enter: List[Effect] = field(default_factory=list)  # effects on arrival
-    tags: List[str] = field(default_factory=list)         # e.g. ["combat", "rest"]
-
-    def get_description(self, character: "Character") -> str:
-        """Return description with player-specific substitutions."""
+    def get_description(self, investigator=None) -> str:
         try:
-            return self.description.format(player=character)
+            return self.description.format(inv=investigator) if investigator else self.description
         except (KeyError, AttributeError):
             return self.description
 
-    def available_choices(self, character: "Character") -> List[Choice]:
-        """Return only choices whose requirements are satisfied."""
-        return [c for c in self.choices if c.is_available(character)]
+    def available_choices(self, investigator) -> List[Choice]:
+        return [c for c in self.choices if c.is_available(investigator)]
 
-    def numbered_choices(self, character: "Character") -> List[Choice]:
-        """
-        Return available choices with auto-assigned numeric keys.
-        Keys are set as side-effects on the Choice objects.
-        """
-        available = self.available_choices(character)
-        for idx, choice in enumerate(available, 1):
-            choice.key = str(idx)
-        return available
+    def numbered_choices(self, investigator) -> List[Choice]:
+        choices = self.available_choices(investigator)
+        for i, c in enumerate(choices, 1):
+            c.key = str(i)
+        return choices
 
-    def find_choice(self, key: str, character: "Character") -> Optional[Choice]:
-        """Look up an available choice by its key."""
-        for choice in self.numbered_choices(character):
-            if choice.key == key:
-                return choice
+    def find_choice(self, key: str, investigator) -> Optional[Choice]:
+        for c in self.numbered_choices(investigator):
+            if c.key == key:
+                return c
         return None
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.scene_id,
+            "title": self.title,
+            "description": self.description,
+            "choices": [c.to_dict() for c in self.choices],
+            "on_enter": [e.to_dict() for e in self.on_enter],
+            "illustration": self.illustration,
+            "map_id": self.map_id,
+            "tags": self.tags,
+        }
+
+    def save(self, path: str) -> None:
+        with open(path, "w") as f:
+            json.dump(self.to_dict(), f, indent=2)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Scene":
+        choices = [Choice.from_dict(c) for c in d.get("choices", [])]
+        on_enter = [Effect.from_dict(e) for e in d.get("on_enter", [])]
+        return cls(
+            scene_id=d["id"],
+            title=d["title"],
+            description=d["description"],
+            choices=choices,
+            on_enter=on_enter,
+            illustration=d.get("illustration"),
+            map_id=d.get("map_id"),
+            tags=d.get("tags", []),
+        )
 
 
 # ---------------------------------------------------------------------------
-# Scene registry
+# Registry
 # ---------------------------------------------------------------------------
 
 class SceneRegistry:
-    """Global registry of all scenes in the game."""
     _scenes: Dict[str, Scene] = {}
 
     @classmethod
@@ -318,8 +357,8 @@ class SceneRegistry:
 
     @classmethod
     def register_many(cls, scenes: List[Scene]) -> None:
-        for scene in scenes:
-            cls.register(scene)
+        for s in scenes:
+            cls.register(s)
 
     @classmethod
     def get(cls, scene_id: str) -> Optional[Scene]:
@@ -327,15 +366,11 @@ class SceneRegistry:
 
     @classmethod
     def require(cls, scene_id: str) -> Scene:
-        scene = cls._scenes.get(scene_id)
-        if scene is None:
-            raise KeyError(f"Unknown scene ID: '{scene_id}'")
-        return scene
+        s = cls._scenes.get(scene_id)
+        if s is None:
+            raise KeyError(f"Scene not found: {scene_id!r}")
+        return s
 
     @classmethod
     def clear(cls) -> None:
         cls._scenes.clear()
-
-    @classmethod
-    def all_scenes(cls) -> List[Scene]:
-        return list(cls._scenes.values())

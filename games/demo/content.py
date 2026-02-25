@@ -1,923 +1,619 @@
 """
-The Dungeon of Aeloria – demo game content.
+Demo scenario: "The Blackwood Manor Affair"
 
-Demonstrates all major engine features:
-  - Character classes with distinct stats and proficiencies
-  - Scene navigation with branching choices
-  - Skill checks (Perception, Stealth, Arcana, Athletics, Persuasion)
-  - Gated choices (item requirements, flags, attributes)
-  - Combat encounters with loot
-  - Items (weapons, potions, keys, quest items)
-  - Story flags that change scene descriptions
-  - XP, leveling, and gold
-  - Victory and game-over states
+A Call of Cthulhu 7e investigation set in 1920s New England.
+The investigators are summoned to a remote manor after a colleague
+disappears while researching an obscure cult.
+
+Scene graph:
+    intro
+      └─ start
+           ├─ examine_letter
+           ├─ study_library   [Library Use]
+           ├─ investigate_grounds
+           │    ├─ find_satchel   [Spot Hidden]
+           │    └─ meet_gardener  → dialogue: gardener
+           └─ descend_cellar
+                └─ cellar_chamber
+                     ├─ banish_success  [Occult ≥ 40]  → victory
+                     ├─ banish_fail     → flee / push
+                     └─ flee_manor      → partial_victory
 """
-from engine import (
-    Choice, Effect, Enemy, Item, ItemRegistry,
-    ItemType, Requirement, Scene, SceneRegistry, SkillCheck,
+from __future__ import annotations
+
+from engine.scene import (
+    Scene, Choice, Effect, FX, SkillCheck, Requirement, SceneRegistry
 )
+from engine.dialogue import (
+    DialogueTree, DialogueNode, DialogueChoice, DialogueRegistry
+)
+from engine.tilemap import TileMap
 
 
 # ---------------------------------------------------------------------------
-# Character classes
+# Tilemap: Manor Ground Floor (ASCII)
+# ---------------------------------------------------------------------------
+_MANOR_ASCII = """\
+####################################
+#..................................#
+#..@.......#......#................#
+#..........#......#................#
+#..........+......+................#
+#..........#......#................#
+################.###################
+#..............#....#..............#
+#..............+....+..............#
+#..............#....#..............#
+####################################
+"""
+
+
+def _build_manor_map() -> TileMap:
+    return TileMap.from_string(_MANOR_ASCII, map_id="manor_ground")
+
+
+# ---------------------------------------------------------------------------
+# Dialogue: Old Thomas the Gardener
 # ---------------------------------------------------------------------------
 
-CLASSES = {
-    "warrior": {
-        "display_name": "Warrior",
-        "description": (
-            "Hardy fighter trained in heavy arms. High STR and CON, "
-            "d8 weapon damage, proficient in Athletics and Intimidation."
+def _build_gardener_dialogue() -> DialogueTree:
+    tree = DialogueTree(dialogue_id="gardener", start_node="greet")
+
+    greet = DialogueNode(
+        node_id="greet",
+        speaker="Thomas",
+        text=(
+            "You're not from around here, are ya? "
+            "Come to poke about the old manor, same as that professor fella?"
         ),
-        "attributes": {
-            "STR": 16, "DEX": 12, "CON": 15,
-            "INT": 8,  "WIS": 10, "CHA": 8,
-        },
-        "max_hp": 14,
-        "armor_class": 15,
-        "attack_bonus": 4,
-        "damage_dice": "1d8+3",
-        "proficiencies": ["Athletics", "Intimidation", "Perception"],
-        "save_proficiencies": ["STR", "CON"],
-        "starting_items": ["short_sword", "health_potion", "torch"],
-        "gold": 15,
-    },
-    "rogue": {
-        "display_name": "Rogue",
-        "description": (
-            "Cunning shadow-walker skilled in stealth and trickery. "
-            "High DEX, d6 damage with sneak bonus, proficient in Stealth and Perception."
+    )
+    greet.editor_x = 50
+    greet.editor_y = 50
+    greet.choices = [
+        DialogueChoice("c1", "Yes. Did you see what happened to him?", next_node="saw_it"),
+        DialogueChoice("c2", "We mean no harm. What can you tell us?", next_node="warn"),
+    ]
+
+    saw_it = DialogueNode(
+        node_id="saw_it",
+        speaker="Thomas",
+        text=(
+            "I seen him go down the cellar steps three nights back. "
+            "Heard screaming after midnight. He never came up again. "
+            "Stay away from that cellar, friends. It ain't natural."
         ),
-        "attributes": {
-            "STR": 10, "DEX": 17, "CON": 12,
-            "INT": 13, "WIS": 11, "CHA": 12,
-        },
-        "max_hp": 9,
-        "armor_class": 14,
-        "attack_bonus": 3,
-        "damage_dice": "1d6+2",
-        "proficiencies": [
-            "Stealth", "Acrobatics", "Sleight of Hand",
-            "Perception", "Deception", "Investigation",
-        ],
-        "save_proficiencies": ["DEX", "INT"],
-        "starting_items": ["dagger", "dagger", "health_potion", "thieves_tools"],
-        "gold": 20,
-    },
-    "mage": {
-        "display_name": "Mage",
-        "description": (
-            "Scholar of the arcane arts. High INT and WIS, d4+INT magic damage, "
-            "proficient in Arcana, History, and Investigation."
+    )
+    saw_it.editor_x = 350
+    saw_it.editor_y = -50
+    saw_it.choices = [
+        DialogueChoice("c3", "Thank you, Thomas. We'll be careful.", next_node="farewell"),
+        DialogueChoice("c4", "Did he leave anything — notes, a journal?", next_node="journal_clue"),
+    ]
+
+    warn = DialogueNode(
+        node_id="warn",
+        speaker="Thomas",
+        text=(
+            "Stay out of the east wing and don't go into the cellar after dark. "
+            "Strange lights down there. Strange sounds. I've worked here forty years "
+            "and I've never once opened that cellar door at night."
         ),
-        "attributes": {
-            "STR": 8,  "DEX": 12, "CON": 10,
-            "INT": 17, "WIS": 14, "CHA": 11,
-        },
-        "max_hp": 7,
-        "armor_class": 12,
-        "attack_bonus": 2,
-        "damage_dice": "1d4+3",
-        "proficiencies": [
-            "Arcana", "History", "Investigation",
-            "Perception", "Insight",
-        ],
-        "save_proficiencies": ["INT", "WIS"],
-        "starting_items": ["staff", "health_potion", "spellbook", "torch"],
-        "gold": 10,
-    },
-}
-
-
-# ---------------------------------------------------------------------------
-# Items
-# ---------------------------------------------------------------------------
-
-def register_items() -> None:
-    ItemRegistry.register_many([
-        # Weapons
-        Item("short_sword",  "Short Sword",   "A well-balanced one-handed blade.",
-             ItemType.WEAPON,  value=10,
-             properties={"damage_dice": "1d6+1", "attack_bonus": 1}),
-        Item("dagger",       "Dagger",        "Small, quick, and deadly at close range.",
-             ItemType.WEAPON,  value=5,
-             properties={"damage_dice": "1d4+1", "attack_bonus": 1, "consumable": False}),
-        Item("staff",        "Arcane Staff",  "A gnarled staff etched with runes. Channels magical force.",
-             ItemType.WEAPON,  value=8,
-             properties={"damage_dice": "1d6", "attack_bonus": 1}),
-        Item("goblin_axe",   "Goblin Axe",   "A crude but effective iron axe. Smells of goblin.",
-             ItemType.WEAPON,  value=4,
-             properties={"damage_dice": "1d6", "attack_bonus": 0}),
-
-        # Armor / Protection
-        Item("leather_armor", "Leather Armor", "Cured hide armor. Offers basic protection.",
-             ItemType.ARMOR, value=15,
-             properties={"ac_bonus": 2}),
-        Item("goblin_shield",  "Goblin Shield",  "A battered wooden shield taken from a goblin.",
-             ItemType.SHIELD, value=3,
-             properties={"ac_bonus": 1}),
-
-        # Potions & Consumables
-        Item("health_potion", "Health Potion", "A vial of glowing red liquid. Restores 2d4+2 HP.",
-             ItemType.POTION, value=25,
-             properties={"heal_dice": "2d4+2", "consumable": True}),
-        Item("strong_potion", "Strong Potion", "A large flask of crimson liquid. Restores 3d6+3 HP.",
-             ItemType.POTION, value=50,
-             properties={"heal_dice": "3d6+3", "consumable": True}),
-        Item("poison_vial",   "Vial of Poison", "A dark, viscous liquid. One-time use.",
-             ItemType.POTION, value=20,
-             properties={"consumable": True}),
-
-        # Tools
-        Item("torch",         "Torch",         "A wooden torch. Burns for an hour. Illuminates dark passages.",
-             ItemType.LIGHT, value=1,
-             properties={"light_radius": 3, "consumable": False}),
-        Item("thieves_tools", "Thieves' Tools", "Lockpicks and tension wrenches. Proficiency required.",
-             ItemType.TOOL, value=25,
-             properties={"consumable": False}),
-        Item("rope",          "Rope (50ft)",   "Hempen rope. Surprisingly useful.",
-             ItemType.TOOL, value=1,
-             properties={"consumable": False}),
-
-        # Keys & Quest Items
-        Item("goblin_key",    "Goblin Key",    "A crude iron key. Probably opens something important.",
-             ItemType.KEY, value=0,
-             properties={"consumable": False}),
-        Item("ancient_amulet", "Ancient Amulet",
-             "A silver amulet engraved with glowing runes. This must be the artifact!",
-             ItemType.QUEST, value=500,
-             properties={"consumable": False}),
-        Item("spellbook",     "Spellbook",     "Your personal spellbook. Contains fire bolt and shield.",
-             ItemType.MISC, value=50,
-             properties={"consumable": False}),
-        Item("goblin_note",   "Crumpled Note",
-             "A dirty scrap of parchment with crude goblin script. 'Cheef say kepp amulet safe in vault.'",
-             ItemType.MISC, value=0,
-             properties={"consumable": False}),
-        Item("gold_coins",    "Bag of Coins",  "A heavy bag of gold coins.",
-             ItemType.MISC, value=30,
-             properties={"consumable": False}),
-    ])
-
-
-# ---------------------------------------------------------------------------
-# Enemy templates (functions to create fresh instances)
-# ---------------------------------------------------------------------------
-
-def goblin() -> Enemy:
-    return Enemy(
-        name="Goblin",
-        max_hp=7, armor_class=13,
-        attack_bonus=2, damage_dice="1d6",
-        xp_reward=50,
-        initiative_bonus=1,
-        description="A small, sneaky creature with beady yellow eyes.",
-        loot_table=["goblin_axe"],
     )
+    warn.editor_x = 350
+    warn.editor_y = 150
+    warn.choices = [
+        DialogueChoice("c5", "What's in the cellar?", next_node="cellar_info"),
+        DialogueChoice("c6", "We understand. Thank you.", next_node="farewell"),
+    ]
 
-def goblin_scout() -> Enemy:
-    return Enemy(
-        name="Goblin Scout",
-        max_hp=10, armor_class=14,
-        attack_bonus=3, damage_dice="1d6+1",
-        xp_reward=75,
-        initiative_bonus=2,
-        description="A nimble goblin with a notched shortbow.",
-        loot_table=["goblin_key"],
-    )
-
-def goblin_guard() -> Enemy:
-    return Enemy(
-        name="Goblin Guard",
-        max_hp=12, armor_class=15,
-        attack_bonus=3, damage_dice="1d8+1",
-        xp_reward=100,
-        initiative_bonus=0,
-        description="A stocky goblin in mismatched armour.",
-        loot_table=[],
-    )
-
-def hobgoblin() -> Enemy:
-    return Enemy(
-        name="Hobgoblin",
-        max_hp=18, armor_class=16,
-        attack_bonus=4, damage_dice="1d10+2",
-        xp_reward=200,
-        initiative_bonus=0,
-        description="A disciplined, militaristic relative of the goblin.",
-        loot_table=["strong_potion"],
-    )
-
-def chieftain() -> Enemy:
-    return Enemy(
-        name="Grak the Goblin Chieftain",
-        max_hp=30, armor_class=16,
-        attack_bonus=5, damage_dice="2d6+3",
-        xp_reward=600,
-        initiative_bonus=1,
-        description=(
-            "A massive goblin draped in crude trophies and stolen plate armour. "
-            "His eyes burn with cunning malice."
+    journal_clue = DialogueNode(
+        node_id="journal_clue",
+        speaker="Thomas",
+        text=(
+            "Aye — he dropped his satchel near the old apple tree out back. "
+            "I didn't touch it. Felt wrong somehow."
         ),
-        loot_table=["strong_potion", "gold_coins"],
     )
+    journal_clue.editor_x = 650
+    journal_clue.editor_y = -120
+    journal_clue.on_enter = [
+        {"type": FX.SET_FLAG, "params": {"key": "knows_journal_location", "value": True}},
+    ]
+    journal_clue.choices = [
+        DialogueChoice("c7", "Thank you. We'll look for it.", next_node="farewell"),
+    ]
+
+    cellar_info = DialogueNode(
+        node_id="cellar_info",
+        speaker="Thomas",
+        text=(
+            "Some kind of old chamber. Older than the manor, I reckon. "
+            "The family that built this place — the Blackwoods — they used to "
+            "hold 'ceremonies' down there. Came to a bad end, the lot of them."
+        ),
+    )
+    cellar_info.editor_x = 650
+    cellar_info.editor_y = 100
+    cellar_info.choices = [
+        DialogueChoice("c8", "That sounds dangerous. Thank you.", next_node="farewell"),
+    ]
+
+    farewell = DialogueNode(
+        node_id="farewell",
+        speaker="Thomas",
+        text=(
+            "Take care, friends. And if you hear anything — anything at all — "
+            "from down below, run. Don't try to be heroes."
+        ),
+    )
+    farewell.editor_x = 950
+    farewell.editor_y = 50
+    farewell.choices = []
+
+    for node in [greet, saw_it, warn, journal_clue, cellar_info, farewell]:
+        tree.nodes[node.node_id] = node
+
+    return tree
 
 
 # ---------------------------------------------------------------------------
 # Scenes
 # ---------------------------------------------------------------------------
 
-def register_scenes() -> None:
+def _build_scenes() -> list:
+    scenes = []
 
-    # ------------------------------------------------------------------ INTRO
-
-    SceneRegistry.register(Scene(
+    # ------------------------------------------------------------------ intro
+    scenes.append(Scene(
         scene_id="intro",
-        title="The Town of Millhaven",
+        title="THE BLACKWOOD MANOR AFFAIR",
         description=(
-            "The town of Millhaven is a muddy cluster of thatch-roofed buildings "
-            "on the edge of the Greywood. You are {player.name}, a wandering "
-            "{player.character_class} who arrived three days ago looking for work. "
-            "Word has reached the inn that goblins have overrun the old ruins to "
-            "the east – the Dungeon of Aeloria – and stolen a powerful magical "
-            "artifact known as the Amulet of Aeloria. The town elder has posted "
-            "a reward of 200 gold for its return."
+            "Arkham, Massachusetts — October, 1926.\n\n"
+            "You receive a telegram from Professor Ellison of Miskatonic University:\n\n"
+            "\"URGENT. GONE TO BLACKWOOD MANOR RE: CULT RESEARCH. FEAR FOR MY "
+            "SAFETY. COME AT ONCE. DO NOT DELAY. — ELLISON\"\n\n"
+            "Three days later, Ellison has not returned. His department chair "
+            "has begged you to investigate. The manor lies twelve miles north "
+            "of Arkham, alone on a wooded hill."
         ),
-        ascii_map=MapTemplates.ENTRANCE,
         choices=[
-            Choice.go("Head to the Rusty Flagon inn to learn more", "tavern"),
+            Choice.go("Travel to Blackwood Manor", "start"),
         ],
     ))
 
-    # ----------------------------------------------------------------- TAVERN
-
-    SceneRegistry.register(Scene(
-        scene_id="tavern",
-        title="The Rusty Flagon Inn",
+    # ------------------------------------------------------------------ start
+    scenes.append(Scene(
+        scene_id="start",
+        title="Blackwood Manor — Front Hall",
         description=(
-            "The inn is dim and smoky. A grizzled woman named Hilda cleans mugs "
-            "behind the bar. A hunched old man in the corner waves you over – "
-            "Elder Aldric, the man who posted the reward. 'The amulet must not "
-            "fall into the chieftain's hands,' he says. 'The goblins will use its "
-            "power to summon darkness upon us all. Take it from Grak the Chieftain. "
-            "He lairs deep in the dungeon.'"
+            "The iron gate groans as you push it open. The manor looms against "
+            "a slate-grey sky, its windows dark. The front door stands ajar.\n\n"
+            "Inside, the entrance hall smells of mildew and burned wax. "
+            "A guttered candelabra sits on the mantelpiece. "
+            "Beside it — a crumpled letter addressed to Ellison."
+        ),
+        map_id="manor_ground",
+        choices=[
+            Choice.go("Examine the letter on the mantelpiece", "examine_letter"),
+            Choice(
+                text="Search the library [Library Use]",
+                skill_check=SkillCheck(
+                    skill="Library Use",
+                    on_success=[Effect.goto("study_library_success")],
+                    on_failure=[Effect.goto("study_library_fail")],
+                ),
+            ),
+            Choice.go("Explore the grounds outside", "investigate_grounds"),
+            Choice.go("Head toward the cellar stairs", "descend_cellar"),
+        ],
+    ))
+
+    # ---------------------------------------------------------- examine_letter
+    scenes.append(Scene(
+        scene_id="examine_letter",
+        title="A Cryptic Letter",
+        description=(
+            "The letter is dated three weeks ago. The handwriting is hurried:\n\n"
+            "\"Ellison — The glyphs in Blackwood's private journal match those "
+            "in the Nargthoth Fragments. I believe the cellar chamber was used "
+            "for summoning. Do NOT open the warded door unless you have completed "
+            "the binding incantation first. The entity is still BOUND — but barely. "
+            "For God's sake be careful.\n\n— Armitage\"\n\n"
+            "A chill runs down your spine."
+        ),
+        on_enter=[
+            Effect.set_flag("read_warning_letter"),
+            Effect.say("You now know: the entity must be bound before the warded door is opened."),
+        ],
+        choices=[
+            Choice.go("Return to the front hall", "start"),
+        ],
+    ))
+
+    # ------------------------------------------------ study_library (success)
+    scenes.append(Scene(
+        scene_id="study_library_success",
+        title="The Library — Forbidden Texts",
+        description=(
+            "The library shelves hold an unusual number of occult volumes. "
+            "A leather-bound journal lies open on the reading table — "
+            "Ellison's handwriting.\n\n"
+            "His notes describe a pre-colonial ritual chamber beneath the manor, "
+            "used by Obadiah Blackwood to 'commune with that which sleeps in the "
+            "angles between spaces.' A marginal note reads:\n\n"
+            "\"Banishment incantation — pg. 247 of the Nargthoth Fragments. "
+            "Must be spoken with Occult knowledge to be effective.\""
+        ),
+        on_enter=[
+            Effect.set_flag("studied_library"),
+            Effect.give_item("Ellison's Journal"),
+        ],
+        choices=[
+            Choice.go("Return to the front hall", "start"),
+        ],
+    ))
+
+    # ------------------------------------------------- study_library (failure)
+    scenes.append(Scene(
+        scene_id="study_library_fail",
+        title="The Library — Dense Pages",
+        description=(
+            "The books are written in a bewildering mix of Latin, Greek, and "
+            "stranger tongues. Most of it is beyond you.\n\n"
+            "You find Ellison's journal but can only make out fragments — "
+            "something about a 'warded door' and a 'binding that must not be broken.'"
+        ),
+        on_enter=[
+            Effect.give_item("Ellison's Journal (partial)"),
+        ],
+        choices=[
+            Choice.go("Return to the front hall", "start"),
+        ],
+    ))
+
+    # ------------------------------------------------- investigate_grounds
+    scenes.append(Scene(
+        scene_id="investigate_grounds",
+        title="The Grounds",
+        description=(
+            "The overgrown garden is wrapped in fog. Dead roses claw at a "
+            "rusted trellis. A path leads around the east wing.\n\n"
+            "Near an ancient apple tree, you notice something half-buried "
+            "in the leaf litter."
         ),
         choices=[
             Choice(
-                text="Ask Hilda if she has any supplies for sale",
+                text="Search carefully near the apple tree [Spot Hidden]",
+                skill_check=SkillCheck(
+                    skill="Spot Hidden",
+                    on_success=[Effect.goto("find_satchel")],
+                    on_failure=[Effect.goto("miss_satchel")],
+                ),
+            ),
+            Choice.go("Speak with the old gardener near the gate", "meet_gardener"),
+            Choice.go("Return to the manor", "start"),
+        ],
+    ))
+
+    # ----------------------------------------------------------- find_satchel
+    scenes.append(Scene(
+        scene_id="find_satchel",
+        title="Ellison's Satchel",
+        description=(
+            "Half-hidden under a mound of leaves you find a leather satchel — "
+            "Ellison's. Inside: a flashlight, a vial of smelling salts, and a "
+            "hand-drawn map of the manor's lower level.\n\n"
+            "The map marks a 'warded door' in the ritual chamber and scrawls "
+            "a warning: BINDING HOLDS — DO NOT DISTURB THE SEALS."
+        ),
+        on_enter=[
+            Effect.give_item("Flashlight"),
+            Effect.give_item("Smelling Salts"),
+            Effect.give_item("Manor Basement Map"),
+            Effect.set_flag("found_satchel"),
+        ],
+        choices=[
+            Choice.go("Return to the garden", "investigate_grounds"),
+        ],
+    ))
+
+    # ----------------------------------------------------------- miss_satchel
+    scenes.append(Scene(
+        scene_id="miss_satchel",
+        title="Nothing Found",
+        description=(
+            "You search but find only dead leaves and a broken garden ornament. "
+            "Whatever might have been here, if anything, remains hidden from you."
+        ),
+        choices=[
+            Choice.go("Return to the garden", "investigate_grounds"),
+        ],
+    ))
+
+    # --------------------------------------------------------- meet_gardener
+    scenes.append(Scene(
+        scene_id="meet_gardener",
+        title="Old Thomas",
+        description=(
+            "Near the rusted gate crouches an ancient man in a wide-brimmed hat, "
+            "pulling weeds with gnarled hands despite the cold. He eyes you "
+            "suspiciously as you approach."
+        ),
+        on_enter=[
+            Effect.say("You can speak with old Thomas, the manor's groundskeeper."),
+        ],
+        choices=[
+            Choice(
+                text="Speak with him",
+                effects=[Effect.dialogue("gardener")],
+            ),
+            Choice.go("Return to the manor", "start"),
+        ],
+    ))
+
+    # --------------------------------------------------------- descend_cellar
+    scenes.append(Scene(
+        scene_id="descend_cellar",
+        title="The Cellar Stairs",
+        description=(
+            "The cellar door is set into the floor near the kitchen. "
+            "A cold, damp smell drifts up from below — earth, old stone, "
+            "and something else. Something sweet and wrong.\n\n"
+            "Stone steps descend into darkness. Faint phosphorescent light "
+            "pulses far below."
+        ),
+        choices=[
+            Choice(
+                text="Descend with the flashlight [Need: Flashlight]",
+                requirement=Requirement(has_item="Flashlight"),
+                effects=[Effect.goto("cellar_chamber")],
+            ),
+            Choice(
+                text="Descend in the dark (risky)",
+                requirement=Requirement(no_item="Flashlight"),
                 effects=[
-                    Effect.say(
-                        "Hilda sells you a health potion for 15 gold."
-                    ),
-                    Effect.give_item("health_potion"),
-                    Effect.take_gold(15),
+                    Effect.say("You stumble in the darkness, scraping your hands on rough stone."),
+                    Effect.damage(1),
+                    Effect.goto("cellar_chamber"),
                 ],
-                requirement=Requirement(min_gold=15, no_flag="bought_potion"),
-                skill_check=None,
+            ),
+            Choice.go("Turn back — you need more information", "start"),
+        ],
+    ))
+
+    # ------------------------------------------------------- cellar_chamber
+    scenes.append(Scene(
+        scene_id="cellar_chamber",
+        title="The Ritual Chamber",
+        description=(
+            "At the bottom of the stairs stretches a vaulted stone chamber "
+            "that predates the manor by centuries. Carved glyphs cover every "
+            "surface, pulsing with a sickly inner light.\n\n"
+            "In the center: a warded iron door, its surface blazing with sigils. "
+            "Before it — what was Professor Ellison. He kneels, eyes blank, "
+            "muttering in a language no living tongue should speak.\n\n"
+            "The ward is failing. One of the binding seals has been scraped away."
+        ),
+        on_enter=[
+            Effect.san_loss("1d6", "1"),
+            Effect.say("The sight of Ellison's broken mind costs you Sanity."),
+        ],
+        choices=[
+            Choice(
+                text="Attempt the banishment incantation (with journal) [Occult +bonus]",
+                requirement=Requirement(has_flag="studied_library"),
+                skill_check=SkillCheck(
+                    skill="Occult",
+                    on_success=[Effect.goto("banish_success")],
+                    on_failure=[Effect.goto("banish_fail")],
+                    bonus_dice=1,
+                ),
             ),
             Choice(
-                text="Buy information from the Elder about the dungeon layout",
+                text="Attempt the banishment incantation [Occult]",
+                requirement=Requirement(no_flag="studied_library"),
+                skill_check=SkillCheck(
+                    skill="Occult",
+                    on_success=[Effect.goto("banish_success")],
+                    on_failure=[Effect.goto("banish_fail")],
+                ),
+            ),
+            Choice(
+                text="Pull Ellison away from the door and flee",
                 effects=[
-                    Effect.say(
-                        "The Elder sketches a rough map. 'The entrance hall leads "
-                        "north to the guard room, then east to the vault where Grak "
-                        "keeps the amulet. His chamber is beyond the vault.'"
-                    ),
-                    Effect.set_flag("knows_layout"),
-                    Effect.take_gold(5),
+                    Effect.say("You drag the catatonic professor toward the stairs."),
+                    Effect.goto("flee_manor"),
                 ],
-                requirement=Requirement(min_gold=5, no_flag="knows_layout"),
             ),
             Choice(
-                text="Try to persuade Hilda for a free potion  [Persuasion DC 14]",
-                skill_check=SkillCheck(
-                    skill="Persuasion",
-                    dc=14,
-                    on_success=[
-                        Effect.say("Hilda sighs and slips you a potion. 'Just this once.'"),
-                        Effect.give_item("health_potion"),
-                        Effect.set_flag("charmed_hilda"),
-                    ],
-                    on_failure=[
-                        Effect.say("Hilda glares. 'Do I look like a charity?'"),
-                    ],
-                ),
-                requirement=Requirement(no_flag="charmed_hilda"),
-            ),
-            Choice.go("Set out for the Dungeon of Aeloria", "dungeon_entrance"),
-        ],
-        on_enter=[
-            Effect.set_flag("visited_tavern"),
-        ],
-    ))
-
-    # --------------------------------------------------- DUNGEON ENTRANCE
-
-    SceneRegistry.register(Scene(
-        scene_id="dungeon_entrance",
-        title="The Dungeon Entrance",
-        description=(
-            "A crumbling stone archway marks the entrance to the Dungeon of Aeloria. "
-            "Ancient carvings of serpents and stars frame the doorway. The smell of "
-            "damp earth and goblin musk drifts from within. Faint torchlight flickers "
-            "beyond the threshold."
-        ),
-        ascii_map="""\
-   ####
-  ##..##
- ##....##
-##..@@..##
-###....###
- ##....##
-  ##++##
-   ####""",
-        choices=[
-            Choice(
-                text="Enter the dungeon",
-                effects=[Effect.goto("entrance_hall")],
-            ),
-            Choice(
-                text="Listen at the entrance  [Perception DC 10]",
-                skill_check=SkillCheck(
-                    skill="Perception",
-                    dc=10,
-                    on_success=[
-                        Effect.say(
-                            "You hear guttural goblin voices arguing about card games, "
-                            "and the scrape of boots on stone. At least two guards."
-                        ),
-                        Effect.set_flag("heard_guards"),
-                    ],
-                    on_failure=[
-                        Effect.say("You strain your ears but hear only the wind."),
-                    ],
-                ),
-                requirement=Requirement(no_flag="heard_guards"),
-            ),
-            Choice(
-                text="Search the entrance for traps  [Investigation DC 13]",
-                skill_check=SkillCheck(
-                    skill="Investigation",
-                    dc=13,
-                    on_success=[
-                        Effect.say(
-                            "A tripwire! You dismantle it carefully, disabling a pit "
-                            "trap just inside the entrance. You gain 25 XP."
-                        ),
-                        Effect.gain_xp(25),
-                        Effect.set_flag("trap_disabled"),
-                    ],
-                    on_failure=[
-                        Effect.say("You find nothing of interest."),
-                    ],
-                ),
-                requirement=Requirement(no_flag="trap_disabled"),
-            ),
-            Choice.go("Return to Millhaven", "tavern"),
-        ],
-    ))
-
-    # --------------------------------------------------- ENTRANCE HALL
-
-    SceneRegistry.register(Scene(
-        scene_id="entrance_hall",
-        title="Entrance Hall",
-        description=(
-            "You stand in a rectangular chamber of ancient stone. Crumbled pillars "
-            "line the walls, and goblin graffiti mars the carved reliefs. A crude "
-            "campfire smoulders in one corner. Two doorways lead further into the "
-            "dungeon: a heavy wooden door to the north (the guard room) and a narrow "
-            "crack in the eastern wall."
-        ),
-        ascii_map="""\
-#########
-#.......#
-#.O...O.#
-#...@...#
-#.......#
-###+#####""",
-        on_enter=[
-            Effect.gain_xp(20),
-        ],
-        choices=[
-            Choice(
-                text="Go north through the wooden door (toward the guard room)",
-                effects=[Effect.goto("guard_room")],
-                requirement=Requirement(no_flag="trap_disabled"),
-            ),
-            Choice(
-                text="Go north carefully – you know there was a trap",
-                effects=[Effect.goto("guard_room")],
-                requirement=Requirement(has_flag="trap_disabled"),
-            ),
-            Choice(
-                text="Squeeze through the crack in the eastern wall  [Athletics DC 12]",
-                skill_check=SkillCheck(
-                    skill="Athletics",
-                    dc=12,
-                    on_success=[
-                        Effect.say("You slip through the crack into a side passage."),
-                        Effect.goto("secret_passage"),
-                    ],
-                    on_failure=[
-                        Effect.say("You're too broad-shouldered. The crack is too tight."),
-                    ],
-                ),
-                requirement=Requirement(no_flag="knows_secret"),
-            ),
-            Choice(
-                text="Examine the goblin graffiti  [History DC 11]",
-                skill_check=SkillCheck(
-                    skill="History",
-                    dc=11,
-                    on_success=[
-                        Effect.say(
-                            "Some of it is territorial marking, but one inscription "
-                            "reads (in crude Goblin): 'Vault east of guard room, key "
-                            "on scout.' Useful information."
-                        ),
-                        Effect.set_flag("knows_vault_location"),
-                        Effect.gain_xp(10),
-                    ],
-                    on_failure=[
-                        Effect.say("It's just goblin scrawl. Probably insults."),
-                    ],
-                ),
-                requirement=Requirement(no_flag="knows_vault_location"),
-            ),
-            Choice(
-                text="Search the campfire area  [Perception DC 10]",
-                skill_check=SkillCheck(
-                    skill="Perception",
-                    dc=10,
-                    on_success=[
-                        Effect.say(
-                            "Buried in the ash you find a small iron key! "
-                            "You pocket it."
-                        ),
-                        Effect.give_item("goblin_key"),
-                        Effect.set_flag("found_ash_key"),
-                        Effect.gain_xp(15),
-                    ],
-                    on_failure=[
-                        Effect.say("Just old campfire ash and gnawed bones."),
-                    ],
-                ),
-                requirement=Requirement(no_flag="found_ash_key"),
-            ),
-            Choice.go("Retreat to the dungeon entrance", "dungeon_entrance"),
-        ],
-    ))
-
-    # --------------------------------------------------- SECRET PASSAGE
-
-    SceneRegistry.register(Scene(
-        scene_id="secret_passage",
-        title="Secret Passage",
-        description=(
-            "A narrow tunnel cuts behind the guard room. Dust and cobwebs suggest "
-            "the goblins don't know it exists. You can hear raised voices through "
-            "the thin wall – the guards arguing. The passage continues east, "
-            "emerging near the vault."
-        ),
-        ascii_map="""\
-##########
-#........#
-#.@......#
-#........#
-####>####""",
-        on_enter=[
-            Effect.set_flag("knows_secret"),
-            Effect.gain_xp(30),
-        ],
-        choices=[
-            Choice(
-                text="Continue east toward the vault (bypass the guards)",
-                effects=[Effect.goto("vault_exterior")],
-            ),
-            Choice(
-                text="Eavesdrop on the guards  [Stealth DC 12, then Perception DC 10]",
-                skill_check=SkillCheck(
-                    skill="Stealth",
-                    dc=12,
-                    on_success=[
-                        Effect.say(
-                            "Silent as shadow, you press your ear to the wall. "
-                            "The scouts bicker: 'Chieftain say don't lose the vault key!' "
-                            "So the scout near the vault has a key."
-                        ),
-                        Effect.set_flag("eavesdropped"),
-                        Effect.gain_xp(20),
-                    ],
-                    on_failure=[
-                        Effect.say("You knock a stone loose. The voices stop briefly, then resume."),
-                    ],
-                ),
-                requirement=Requirement(no_flag="eavesdropped"),
-            ),
-            Choice.go("Go back to the entrance hall", "entrance_hall"),
-        ],
-    ))
-
-    # --------------------------------------------------- GUARD ROOM
-
-    SceneRegistry.register(Scene(
-        scene_id="guard_room",
-        title="The Guard Room",
-        description=(
-            "A wide chamber that reeks of goblin. Three bedrolls are scattered on "
-            "the floor, surrounded by gnawed bones and crude weapons. Two goblin "
-            "guards snap to attention as you enter. 'Intruder!' one shrieks, "
-            "reaching for its axe."
-        ),
-        ascii_map="""\
-#########
-#.g...g.#
-#.......#
-#...@...#
-####.####""",
-        on_enter=[
-            Effect.set_flag("in_guard_room"),
-        ],
-        choices=[
-            Choice(
-                text="Fight the goblins!",
+                text="Open the warded door [EXTREMELY DANGEROUS]",
                 effects=[
-                    Effect.combat([goblin_guard(), goblin_scout()]),
-                    Effect.set_flag("guards_defeated"),
-                    Effect.goto("guard_room_cleared"),
+                    Effect.san_loss("1d10", "1d3"),
+                    Effect(FX.COMBAT, {
+                        "enemies": [{
+                            "name": "Dimensional Shambler",
+                            "hp": 14,
+                            "attack_skill": 55,
+                            "damage_dice": "2d6",
+                            "san_loss": "1d6/1d20",
+                            "armor": 0,
+                        }]
+                    }),
                 ],
-                requirement=Requirement(no_flag="guards_defeated"),
             ),
-            Choice(
-                text="Try to intimidate them into surrendering  [Intimidation DC 14]",
-                skill_check=SkillCheck(
-                    skill="Intimidation",
-                    dc=14,
-                    on_success=[
-                        Effect.say(
-                            "You draw yourself to full height and let out a fearsome "
-                            "roar. The goblins drop their weapons and flee shrieking "
-                            "into the darkness. You find a key on the dropped belt."
-                        ),
-                        Effect.give_item("goblin_key"),
-                        Effect.set_flag("guards_defeated"),
-                        Effect.gain_xp(150),
-                        Effect.goto("guard_room_cleared"),
-                    ],
-                    on_failure=[
-                        Effect.say("The goblins laugh. 'Kill the funny man!'"),
-                        Effect.combat([goblin_guard(), goblin_scout()]),
-                        Effect.set_flag("guards_defeated"),
-                        Effect.goto("guard_room_cleared"),
-                    ],
-                ),
-                requirement=Requirement(no_flag="guards_defeated"),
-            ),
-            Choice(
-                text="Attempt to sneak past them  [Stealth DC 16]",
-                skill_check=SkillCheck(
-                    skill="Stealth",
-                    dc=16,
-                    on_success=[
-                        Effect.say("You press against the wall and slip by, holding your breath."),
-                        Effect.set_flag("sneaked_past"),
-                        Effect.gain_xp(75),
-                        Effect.goto("guard_room_cleared"),
-                    ],
-                    on_failure=[
-                        Effect.say("'OI! Get it!' They spot you."),
-                        Effect.combat([goblin_guard(), goblin_scout()]),
-                        Effect.set_flag("guards_defeated"),
-                        Effect.goto("guard_room_cleared"),
-                    ],
-                ),
-                requirement=Requirement(no_flag="guards_defeated"),
-            ),
-            Choice.go("Retreat to the entrance hall", "entrance_hall"),
         ],
     ))
 
-    # ---------------------------------------- GUARD ROOM (CLEARED)
-
-    SceneRegistry.register(Scene(
-        scene_id="guard_room_cleared",
-        title="The Guard Room",
+    # ---------------------------------------------------------- banish_success
+    scenes.append(Scene(
+        scene_id="banish_success",
+        title="The Ward Holds",
         description=(
-            "The guard room is quiet now. Overturned furniture and scattered weapons "
-            "tell the tale of what happened here. Passages lead east toward the "
-            "vault and west back to the entrance hall."
+            "Your voice rises, the incantation forming from the notes "
+            "in Ellison's journal. The glyphs flare blinding white.\n\n"
+            "A shriek of protest tears through dimensions not accessible "
+            "to human senses. The warded door glows red-hot, then fades to cold iron.\n\n"
+            "Ellison collapses. He is alive — broken, but alive. "
+            "The phosphorescent light fades. The chamber is quiet.\n\n"
+            "It is over. For now."
         ),
-        ascii_map="""\
-#########
-#.......#
-#.......#
-#...@...#
-####.####""",
-        choices=[
-            Choice(
-                text="Search the room for loot  [Perception DC 11]",
-                skill_check=SkillCheck(
-                    skill="Perception",
-                    dc=11,
-                    on_success=[
-                        Effect.say("Behind a loose stone you find a leather pouch of coins!"),
-                        Effect.give_gold(25),
-                        Effect.give_item("goblin_note"),
-                        Effect.set_flag("searched_guard_room"),
-                        Effect.gain_xp(15),
-                    ],
-                    on_failure=[
-                        Effect.say("Nothing useful among the goblin junk."),
-                        Effect.set_flag("searched_guard_room"),
-                    ],
-                ),
-                requirement=Requirement(no_flag="searched_guard_room"),
-            ),
-            Choice.go("Go east toward the vault", "vault_exterior"),
-            Choice.go("Go west back to the entrance hall", "entrance_hall"),
-        ],
-    ))
-
-    # ---------------------------------------- VAULT EXTERIOR
-
-    SceneRegistry.register(Scene(
-        scene_id="vault_exterior",
-        title="Vault Corridor",
-        description=(
-            "A short corridor ends at a heavy iron door reinforced with crude iron "
-            "bands. A large keyhole is visible. Through the door you can sense a "
-            "faint magical aura – the amulet must be inside. Beyond the vault "
-            "corridor, a further passage leads to the chieftain's chamber."
-        ),
-        ascii_map="""\
-###########
-#.........#
-#....@....#
-#.........#
-####+#+####""",
-        choices=[
-            Choice(
-                text="Use the goblin key to unlock the door",
-                effects=[
-                    Effect.say("The key turns with a satisfying clunk. The vault opens."),
-                    Effect.remove_item("goblin_key"),
-                    Effect.goto("vault"),
-                ],
-                requirement=Requirement(has_item="goblin_key"),
-            ),
-            Choice(
-                text="Pick the lock with Thieves' Tools  [Sleight of Hand DC 16]",
-                skill_check=SkillCheck(
-                    skill="Sleight of Hand",
-                    dc=16,
-                    on_success=[
-                        Effect.say("With careful hands, you work the tumblers. Click!"),
-                        Effect.gain_xp(30),
-                        Effect.goto("vault"),
-                    ],
-                    on_failure=[
-                        Effect.say("The mechanism is too complex. You'll need a key – or more tries."),
-                    ],
-                ),
-                requirement=Requirement(has_item="thieves_tools"),
-            ),
-            Choice(
-                text="Break down the door  [Athletics DC 18]",
-                skill_check=SkillCheck(
-                    skill="Athletics",
-                    dc=18,
-                    on_success=[
-                        Effect.say("You slam your shoulder into the door. It buckles and swings open!"),
-                        Effect.gain_xp(25),
-                        Effect.goto("vault"),
-                    ],
-                    on_failure=[
-                        Effect.say("The door holds firm. You bruise your shoulder for nothing."),
-                        Effect.damage(1),
-                    ],
-                ),
-            ),
-            Choice(
-                text="Study the door's magical aura  [Arcana DC 13]",
-                skill_check=SkillCheck(
-                    skill="Arcana",
-                    dc=13,
-                    on_success=[
-                        Effect.say(
-                            "The ward is keyed to a specific iron key. However, "
-                            "you detect a minor flaw in the enchantment – a Sleight of "
-                            "Hand check of DC 14 (rather than 16) would exploit it."
-                        ),
-                        Effect.set_flag("studied_door"),
-                        Effect.gain_xp(20),
-                    ],
-                    on_failure=[
-                        Effect.say("The magical emanations are too subtle to interpret."),
-                    ],
-                ),
-                requirement=Requirement(no_flag="studied_door"),
-            ),
-            Choice.go("Go back to the guard room", "guard_room_cleared"),
-            Choice.go("Advance toward the chieftain's chamber (without the amulet)",
-                      "chieftain_approach",
-                      requirement=Requirement(no_flag="has_amulet")),
-        ],
-    ))
-
-    # ---------------------------------------- VAULT
-
-    SceneRegistry.register(Scene(
-        scene_id="vault",
-        title="The Treasure Vault",
-        description=(
-            "A small chamber crammed with goblin loot: piles of copper coins, "
-            "broken weapons, and stolen trinkets. At the center, on a crude stone "
-            "pedestal, rests the Ancient Amulet of Aeloria. It glows with soft "
-            "silver light, runes shifting across its surface."
-        ),
-        ascii_map="""\
-#######
-#.$.$!#
-#.....#
-#..@..#
-#######""",
         on_enter=[
-            Effect.gain_xp(50),
+            Effect.set_flag("banished_entity"),
+            Effect.say("Your sanity holds. You feel clarity return."),
+        ],
+        choices=[
+            Choice.go("Carry Ellison out of the manor", "victory"),
+        ],
+    ))
+
+    # ----------------------------------------------------------- banish_fail
+    scenes.append(Scene(
+        scene_id="banish_fail",
+        title="The Incantation Fails",
+        description=(
+            "The words die in your throat. The sigils pulse mockingly.\n\n"
+            "A crack runs through the warded door. Something vast and cold "
+            "presses against it from the other side. Ellison begins to scream.\n\n"
+            "You have seconds to act."
+        ),
+        on_enter=[
+            Effect.san_loss("1d4", "0"),
+        ],
+        choices=[
+            Choice.go("Grab Ellison and run for the stairs", "flee_manor"),
+            Choice(
+                text="Try again — push the roll [Occult PUSH]",
+                skill_check=SkillCheck(
+                    skill="Occult",
+                    on_success=[Effect.goto("banish_success")],
+                    on_failure=[
+                        Effect.san_loss("1d10", "0"),
+                        Effect.damage(3),
+                        Effect.goto("game_over_consumed"),
+                    ],
+                    push=True,
+                ),
+            ),
+        ],
+    ))
+
+    # ------------------------------------------------------------- flee_manor
+    scenes.append(Scene(
+        scene_id="flee_manor",
+        title="Flight",
+        description=(
+            "You half-carry the catatonic Ellison up the cellar stairs, "
+            "through the dark manor, and out into the cold night air.\n\n"
+            "Behind you, the manor shudders. Glass shatters in every window. "
+            "Then — silence.\n\n"
+            "Ellison will need months of care at Arkham Sanitarium. "
+            "He may never speak again about what he saw.\n\n"
+            "The entity remains bound — but the seal is weakening. "
+            "You have bought the world time. How much, you cannot say."
+        ),
+        on_enter=[
+            Effect.san_loss("1", "0"),
+        ],
+        choices=[
+            Choice.go("Report to Dr. Armitage — Partial Victory", "partial_victory"),
+        ],
+    ))
+
+    # --------------------------------------------------------- partial_victory
+    scenes.append(Scene(
+        scene_id="partial_victory",
+        title="Report to Armitage",
+        description=(
+            "Armitage listens grimly to your report in his study at the "
+            "university. He nods, his face grave.\n\n"
+            "\"You did what you could. The binding will hold for years, perhaps "
+            "decades. By then... we may know more.\"\n\n"
+            "He hands you a glass of brandy. Through the window, Arkham looks "
+            "peaceful. You know better now."
+        ),
+        choices=[
+            Choice(
+                text="It is enough. For now.",
+                effects=[Effect.victory(
+                    "You survived the Blackwood Manor Affair. "
+                    "The entity remains bound. Ellison recovers slowly. "
+                    "Arkham sleeps, unknowing."
+                )],
+            ),
+        ],
+    ))
+
+    # ------------------------------------------------------------ victory
+    scenes.append(Scene(
+        scene_id="victory",
+        title="The Darkness Driven Back",
+        description=(
+            "You and Ellison emerge into the cold October night. "
+            "The stars wheel overhead, indifferent as always.\n\n"
+            "Ellison clutches your arm, trembling. "
+            "'It's still there,' he whispers. 'It will always be there. "
+            "We only locked the door.'\n\n"
+            "You drive back to Arkham in silence."
+        ),
+        choices=[
+            Choice(
+                text="Deliver your report to Dr. Armitage",
+                effects=[Effect.victory(
+                    "The Blackwood Manor Affair — Resolved. "
+                    "The entity is re-sealed. Ellison lives. "
+                    "The world continues, ignorant of what almost was."
+                )],
+            ),
+        ],
+    ))
+
+    # ------------------------------------------------------- game_over_consumed
+    scenes.append(Scene(
+        scene_id="game_over_consumed",
+        title="Consumed",
+        description=(
+            "The warded door shatters. In the blinding non-light that pours through, "
+            "you see — briefly — something that exists in angles and impossibilities.\n\n"
+            "Your mind does not survive the encounter intact.\n\n"
+            "When the authorities finally enter the manor, they find only "
+            "a catatonic figure kneeling beside a shattered iron door, "
+            "muttering in no known language. The cellar is cold and dark.\n\n"
+            "Professor Ellison is never found."
+        ),
+        on_enter=[
+            Effect.san_loss("5d10", "0"),
         ],
         choices=[
             Choice(
-                text="Take the Amulet of Aeloria!",
-                effects=[
-                    Effect.give_item("ancient_amulet"),
-                    Effect.give_gold(40),
-                    Effect.set_flag("has_amulet"),
-                    Effect.say(
-                        "The moment your fingers close around the amulet, it flashes "
-                        "with brilliant light. You feel ancient power hum through you. "
-                        "You also help yourself to the coin piles – 40 gold pieces."
-                    ),
-                    Effect.gain_xp(100),
-                ],
-                requirement=Requirement(no_flag="has_amulet"),
+                text="The darkness claims you.",
+                effects=[Effect.game_over(
+                    "Consumed by an entity beyond human comprehension. "
+                    "The investigation ends here."
+                )],
             ),
-            Choice(
-                text="Examine the other items in the vault  [Investigation DC 12]",
-                skill_check=SkillCheck(
-                    skill="Investigation",
-                    dc=12,
-                    on_success=[
-                        Effect.say(
-                            "Hidden beneath a loose flagstone you find a Strong Potion "
-                            "and a fine pair of Leather Armor!"
-                        ),
-                        Effect.give_item("strong_potion"),
-                        Effect.give_item("leather_armor"),
-                        Effect.set_flag("searched_vault"),
-                        Effect.gain_xp(25),
-                    ],
-                    on_failure=[
-                        Effect.say("Just goblin junk and old bones."),
-                        Effect.set_flag("searched_vault"),
-                    ],
-                ),
-                requirement=Requirement(no_flag="searched_vault"),
-            ),
-            Choice.go("Leave the vault and face the chieftain", "chieftain_approach",
-                      requirement=Requirement(has_flag="has_amulet")),
-            Choice.go("Leave the vault (return to corridor)", "vault_exterior"),
         ],
     ))
 
-    # ---------------------------------------- CHIEFTAIN APPROACH
-
-    SceneRegistry.register(Scene(
-        scene_id="chieftain_approach",
-        title="The Chieftain's Antechamber",
-        description=(
-            "A wide passage opens into a vaulted antechamber. Crude war trophies "
-            "line the walls – shields, bones, and the weapons of fallen adventurers. "
-            "Beyond a beaded curtain you hear a deep, guttural voice barking orders. "
-            "Grak is inside."
-        ),
-        ascii_map="""\
-###########
-#.........#
-#.B.....@.#
-#.........#
-###########""",
-        choices=[
-            Choice(
-                text="Charge in with weapons drawn!",
-                effects=[
-                    Effect.say("You burst through the curtain with a war cry!"),
-                    Effect.combat([chieftain()]),
-                    Effect.set_flag("grak_defeated"),
-                    Effect.goto("victory_scene"),
-                ],
-                requirement=Requirement(no_flag="grak_defeated"),
-            ),
-            Choice(
-                text="Try to reason with Grak  [Persuasion DC 18]",
-                skill_check=SkillCheck(
-                    skill="Persuasion",
-                    dc=18,
-                    on_success=[
-                        Effect.say(
-                            "Against all odds, you appeal to Grak's pragmatic side. "
-                            "'Fine,' he rumbles. 'Take the shiny thing. But you owe "
-                            "Grak a favour.' He lets you pass."
-                        ),
-                        Effect.gain_xp(400),
-                        Effect.set_flag("grak_persuaded"),
-                        Effect.set_flag("grak_defeated"),
-                        Effect.goto("victory_scene"),
-                    ],
-                    on_failure=[
-                        Effect.say("Grak throws a chair at you. 'Words are weak! Steel speaks!'"),
-                        Effect.combat([chieftain()]),
-                        Effect.set_flag("grak_defeated"),
-                        Effect.goto("victory_scene"),
-                    ],
-                ),
-                requirement=Requirement(no_flag="grak_defeated"),
-            ),
-            Choice(
-                text="Scout the room before entering  [Stealth DC 14, Perception DC 12]",
-                skill_check=SkillCheck(
-                    skill="Stealth",
-                    dc=14,
-                    on_success=[
-                        Effect.say(
-                            "You peer through the curtain. Grak sits on a throne of "
-                            "bones, distracted by a map. Two weak goblin minions guard "
-                            "the sides – but Grak's back is momentarily turned. "
-                            "You gain advantage on your first attack."
-                        ),
-                        Effect.set_flag("grak_scouted"),
-                        Effect.gain_xp(30),
-                    ],
-                    on_failure=[
-                        Effect.say("A bead rattles. Grak's eyes snap to the curtain. The element of surprise is lost."),
-                    ],
-                ),
-                requirement=Requirement(no_flag="grak_scouted"),
-            ),
-            Choice.go("Retreat to the vault corridor", "vault_exterior"),
-        ],
-    ))
-
-    # ---------------------------------------- VICTORY
-
-    SceneRegistry.register(Scene(
-        scene_id="victory_scene",
-        title="Triumph!",
-        description=(
-            "The dungeon is silent. You stand victorious amid the wreckage of "
-            "Grak's throne room, the Ancient Amulet of Aeloria pulsing warmly "
-            "in your pack. The goblin threat is broken. You make your way back "
-            "through the dungeon and out into the cool night air of Millhaven."
-        ),
-        ascii_map=MapTemplates.BOSS_CHAMBER,
-        on_enter=[
-            Effect.gain_xp(200),
-            Effect.give_gold(200),
-            Effect.victory(
-                "You return the Amulet of Aeloria to Elder Aldric. "
-                "The town cheers. You are hailed as the Hero of Millhaven. "
-                "Aldric presses 200 gold into your hands. "
-                "The dungeon is cleared, the artifact is safe, and your legend "
-                "has only just begun."
-            ),
-        ],
-        choices=[],
-    ))
-
-    # ---------------------------------------- DEATH SCENES
-
-    SceneRegistry.register(Scene(
-        scene_id="death_combat",
-        title="Fallen",
-        description="Your wounds are too great. Darkness takes you.",
-        on_enter=[
-            Effect.game_over("You have been slain in the Dungeon of Aeloria."),
-        ],
-        choices=[],
-    ))
-
-
-# ---------------------------------------------------------------------------
-# Map templates import
-# ---------------------------------------------------------------------------
-
-from engine.dungeon import MapTemplates
+    return scenes
 
 
 # ---------------------------------------------------------------------------
 # Registration entry point
 # ---------------------------------------------------------------------------
 
-def register_all() -> None:
-    """Register all items and scenes. Call this before creating the GameEngine."""
-    register_items()
-    register_scenes()
+def register_all() -> TileMap:
+    """
+    Register all scenes, dialogues, and return the manor map.
+    Call this once before creating a GameState.
+    """
+    SceneRegistry.clear()
+    DialogueRegistry.clear()
+
+    for scene in _build_scenes():
+        SceneRegistry.register(scene)
+
+    gardener_tree = _build_gardener_dialogue()
+    DialogueRegistry.register(gardener_tree)
+
+    manor_map = _build_manor_map()
+    return manor_map

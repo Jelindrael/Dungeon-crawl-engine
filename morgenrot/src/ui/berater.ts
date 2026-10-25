@@ -71,7 +71,7 @@ export function beraterTipps(s: Spielstand): Tipp[] {
   for (const f of FRAKTION_IDS) {
     const fr = s.fraktionen[f];
     if (fr.loyalitaet < 22 && fr.macht > 45 && f !== 'kapital' && f !== 'tech')
-      add('inneres', 6, `${FRAKTIONEN[f].name} sind sehr unzufrieden – und mächtig. Gespräche würden helfen.`, { tab: 'gesellschaft' });
+      add('inneres', 6, `Die Gruppe „${FRAKTIONEN[f].name}“ ist sehr unzufrieden – und mächtig. Gespräche würden helfen.`, { tab: 'gesellschaft' });
   }
 
   // Bewegung

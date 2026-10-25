@@ -48,6 +48,21 @@ export function autoSpeichern(s: Spielstand) {
 export function laden(slot: Slot): Spielstand | null {
   const s = lesen<Spielstand>(`stand.${slot}`);
   if (!s || s.version !== SPIELSTAND_VERSION || !LAND_MAP[s.land]) return null;
+  return migrieren(s);
+}
+
+/** Ergänzt Felder, die in älteren Spielständen derselben Version noch fehlen können. */
+function migrieren(s: Spielstand): Spielstand {
+  s.bonus ??= {};
+  s.machtBonus ??= {};
+  s.anliegenBasis ??= {};
+  s.anliegenRef ??= {};
+  s.anliegenStart ??= {};
+  s.amtszeit ??= 0;
+  s.strukturwandel ??= 0;
+  s.weltRest ??= 100;
+  s.geplanteEreignisse ??= [];
+  s.erfolgeLauf ??= [];
   return s;
 }
 

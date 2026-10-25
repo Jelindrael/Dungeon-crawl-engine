@@ -191,7 +191,7 @@ function Speichern({ s }: { s: Spielstand }) {
                   const st = laden(slot);
                   if (st) {
                     spiel.setzen(st);
-                    ui.setzen({ tab: null, unterseite: null, region: null });
+                    ui.setzen({ tab: null, unterseite: null, region: null, ereignisErgebnis: null, ergebnisText: null });
                     ui.toast('Spielstand geladen', '📂', 'gut');
                   }
                 })}

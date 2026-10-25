@@ -63,7 +63,7 @@ export function Titel() {
               const s = laden('auto');
               if (!s) return;
               spiel.setzen(s);
-              ui.setzen({ bildschirm: 'spiel', tab: null, region: null, unterseite: null });
+              ui.setzen({ bildschirm: 'spiel', tab: null, region: null, unterseite: null, ereignisErgebnis: null, ergebnisText: null });
             })}
           >
             Fortsetzen · {auto.flagge} {auto.datum}
@@ -267,7 +267,8 @@ export function Intro() {
             const s = neuesSpiel(gewaehltesLand, gewaehlteSchwierigkeit);
             spiel.setzen(s);
             klang.erfolg();
-            ui.setzen({ bildschirm: 'spiel', tab: null, region: null, unterseite: null, overlay: 'normal' });
+            ui.setzen({ bildschirm: 'spiel', tab: null, region: null, unterseite: null, overlay: 'normal', ereignisErgebnis: null, ergebnisText: null });
+            weltGlobal()?.setOverlay('normal');
           })}
         >
           Die Regierung übernehmen

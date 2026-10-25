@@ -798,7 +798,7 @@ export function fraktionsAktion(s: Spielstand, f: FraktionId, art: FraktionsAkti
     return `Eine Person aus den Reihen von ${name} wird Teil der Regierung. Loyalität +14, deine Partei murrt.`;
   }
   wendeAn(s, { fraktionen: { [f]: -25 }, macht: { [f]: -12 }, delta: { buergerrechte: -4, legitimitaet: -3, unruhe: 4 } });
-  return `${name} werden mit staatlicher Gewalt eingeschüchtert. Ihre Macht sinkt – ihr Hass wächst. Bürgerrechte und Legitimität leiden.`;
+  return `Die Gruppe „${FRAKTIONEN[f].name}“ wird mit staatlicher Gewalt eingeschüchtert. Ihre Macht sinkt – ihr Hass wächst. Bürgerrechte und Legitimität leiden.`;
 }
 
 // ───────────────────────── Hilfen für die Oberfläche ─────────────────────────

@@ -114,7 +114,7 @@ export function Lage() {
                 </div>
                 <div style={{ flex: 1 }}>
                   <div class="wer" style={{ color: fr.farbe }}>
-                    {fr.kurz} fordern
+                    Forderung: {fr.kurz}
                   </div>
                   <div class="was">{forderungText(f)}</div>
                   <div class="klein muted" style={{ marginTop: 3 }}>

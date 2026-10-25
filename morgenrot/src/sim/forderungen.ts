@@ -68,5 +68,5 @@ export function forderungenPruefen(s: Spielstand, rnd: () => number, meldungen: 
     strafe: Math.round(5 + wahl.gewinn * 0.2),
   });
   s.flags[`ford_${f}`] = s.runde;
-  meldungen.push({ typ: 'forderung', text: `${FRAKTIONEN[f].icon} ${FRAKTIONEN[f].kurz} stellen eine neue Forderung.` });
+  meldungen.push({ typ: 'forderung', text: `${FRAKTIONEN[f].icon} Neue Forderung: ${FRAKTIONEN[f].name}` });
 }

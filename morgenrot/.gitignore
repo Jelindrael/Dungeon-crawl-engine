@@ -1,0 +1,4 @@
+node_modules
+dist
+# Root-.gitignore schließt *.json aus – hier brauchen wir sie
+!*.json

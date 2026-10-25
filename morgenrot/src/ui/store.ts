@@ -78,6 +78,12 @@ class UiStore extends Beobachtbar {
 
 export const ui = new UiStore();
 
+/** Öffnet einen Lexikoneintrag im Mehr-Tab und schaltet ihn im laufenden Spiel frei. */
+export function lexikonOeffnen(id: string) {
+  if (spiel.s && !spiel.s.codex.includes(id)) spiel.aendern((s) => s.codex.push(id));
+  ui.setzen({ tab: 'mehr', unterseite: 'codex', codexEintrag: id, region: null });
+}
+
 function useAbo(o: Beobachtbar) {
   const [, erzwingen] = useReducer((x: number) => x + 1, 0);
   useEffect(() => {

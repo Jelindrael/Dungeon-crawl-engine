@@ -13,6 +13,16 @@ export function tippen(fn?: () => void) {
   };
 }
 
+/** Knopf, der einen Lexikoneintrag öffnet (und ihn freischaltet). */
+export function LexikonLink(props: { id?: string; oeffnen: (id: string) => void }) {
+  if (!props.id) return null;
+  return (
+    <button class="text-knopf klein" style={{ marginTop: 4 }} onClick={tippen(() => props.oeffnen(props.id!))}>
+      📖 Hintergrund im Lexikon
+    </button>
+  );
+}
+
 // ───────── Icons ─────────
 const pfad = (d: string) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">

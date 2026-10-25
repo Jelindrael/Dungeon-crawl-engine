@@ -246,6 +246,31 @@ export function fraktionsZiele(s: Spielstand, b: Beitraege): Record<FraktionId, 
   return res;
 }
 
+/** Erklärt, woher die Loyalität einer Fraktion kommt (für die Oberfläche). */
+export function fraktionsGruende(s: Spielstand, f: FraktionId) {
+  const b = sammleBeitraege(s);
+  const startPolitik = land(s).politik;
+  let politikJetzt = 0;
+  let politikStart = 0;
+  for (const dial of POLITIK) {
+    politikJetzt += stufenHaltung(s, dial.id, (s.phase === 'regierung' ? s.politik : s.programm)[dial.id] ?? 0)[f] ?? 0;
+    politikStart += stufenHaltung(s, dial.id, startPolitik[dial.id] ?? 0)[f] ?? 0;
+  }
+  const lage = Object.entries(FRAKTIONEN[f].anliegen)
+    .map(([k, gew]) => {
+      const id = k as WertId;
+      return { id, beitrag: (s.werte[id] - s.basis.werte[id]) * (gew ?? 0) };
+    })
+    .filter((x) => Math.abs(x.beitrag) >= 1)
+    .sort((a, c) => Math.abs(c.beitrag) - Math.abs(a.beitrag));
+  return {
+    politik: haltung(politikJetzt) - haltung(politikStart),
+    gesamtHaltung: b.fraktionen[f],
+    lage,
+    verschleiss: s.phase === 'regierung' ? Math.min(12, s.amtszeit * 0.15) : 0,
+  };
+}
+
 export function anliegenWert(s: Spielstand, f: FraktionId): number {
   let a = 0;
   for (const [k, gew] of Object.entries(FRAKTIONEN[f].anliegen)) a += (s.werte[k as WertId] ?? 0) * (gew ?? 0);

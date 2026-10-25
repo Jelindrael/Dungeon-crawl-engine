@@ -219,9 +219,9 @@ export class Welt {
         depthWrite: false,
         uniforms: { pixel: { value: this.renderer.getPixelRatio() } },
         vertexShader: `attribute float alter; attribute float farbe; varying float vA; varying float vF; uniform float pixel;
-          void main(){ vA = alter; vF = farbe; vec4 mv = modelViewMatrix * vec4(position,1.0); gl_PointSize = (14.0 + alter*40.0) * pixel / -mv.z * 6.0; gl_Position = projectionMatrix * mv; }`,
+          void main(){ vA = alter; vF = farbe; vec4 mv = modelViewMatrix * vec4(position,1.0); gl_PointSize = (18.0 + alter*60.0) * pixel / -mv.z * 6.0; gl_Position = projectionMatrix * mv; }`,
         fragmentShader: `varying float vA; varying float vF; void main(){ vec2 c = gl_PointCoord - 0.5; float d = length(c); if(d>0.5) discard;
-          vec3 col = mix(vec3(0.36,0.34,0.32), vec3(0.95), vF); gl_FragColor = vec4(col, (1.0-vA) * (0.5 - d) * 1.1); }`,
+          vec3 col = mix(vec3(0.3,0.28,0.27), vec3(0.95), vF); gl_FragColor = vec4(col, (1.0-vA) * (0.5 - d) * 1.5); }`,
       }),
     );
     this.rauch.frustumCulled = false;
@@ -266,7 +266,7 @@ export class Welt {
     this.farbenAktualisieren();
     if (sofort) {
       this.verschmutzungAnzeige = z.verschmutzung;
-      this.wasserStand = Math.max(0, z.temperatur - 1.45) * 0.14;
+      this.wasserStand = Math.min(0.16, Math.max(0, z.temperatur - 1.45) * 0.08);
     }
   }
 
@@ -420,7 +420,7 @@ export class Welt {
     }
     this.haeuser = new THREE.InstancedMesh(GEOMETRIEN.haus(), mat, Math.max(1, hausPlaetze.length));
     this.haeuser.castShadow = true;
-    hausPlaetze.forEach((p, i) => setze(this.haeuser!, i, p.x, p.y, p.z, 1, i * 0.7));
+    hausPlaetze.forEach((p, i) => setze(this.haeuser!, i, p.x, p.y, p.z, 1.25, i * 0.7));
     this.haeuserAnzahl = hausPlaetze.length;
     this.landGruppe.add(this.haeuser);
     this.hochhaeuser = new THREE.InstancedMesh(GEOMETRIEN.hochhaus(), mat, Math.max(1, turmPlaetze.length));
@@ -463,7 +463,7 @@ export class Welt {
     }
     this.rotorPositionen = [];
     windSlots.forEach((s) => {
-      this.rotorPositionen.push(new THREE.Vector3(s.x - 0.3, s.y + 1.12, s.z + 0.08), new THREE.Vector3(s.x + 0.3, s.y + 1.12, s.z - 0.12));
+      this.rotorPositionen.push(new THREE.Vector3(s.x - 0.3, s.y + 1.46, s.z + 0.1), new THREE.Vector3(s.x + 0.3, s.y + 1.46, s.z - 0.1));
     });
     this.energieMatrizen();
 
@@ -515,16 +515,16 @@ export class Welt {
     this.energie.forEach((s, i) => {
       const f = s.fossilAnteil;
       const fs = Math.max(0.0001, f);
-      setze(this.fabriken!, i, s.x - 0.15, s.y, s.z + 0.1, fs);
-      setze(this.kuehltuerme!, i, s.x + 0.35, s.y, s.z - 0.25, fs * 1.2);
-      if (f > 0.5) this.rauchQuellen.push(new THREE.Vector3(s.x + 0.03, s.y + 0.78, s.z + 0.18), new THREE.Vector3(s.x + 0.35, s.y + 0.72, s.z - 0.25));
+      setze(this.fabriken!, i, s.x - 0.2, s.y, s.z + 0.12, fs * 1.35);
+      setze(this.kuehltuerme!, i, s.x + 0.38, s.y, s.z - 0.28, fs * 1.6);
+      if (f > 0.5) this.rauchQuellen.push(new THREE.Vector3(s.x + 0.04, s.y + 1.02, s.z + 0.23), new THREE.Vector3(s.x + 0.38, s.y + 0.96, s.z - 0.28));
       const e = Math.max(0.0001, 1 - f);
       if (s.art === 'wind') {
-        setze(this.windmasten!, wi, s.x - 0.3, s.y, s.z, e);
-        setze(this.windmasten!, wi + 1, s.x + 0.3, s.y, s.z - 0.2, e);
+        setze(this.windmasten!, wi, s.x - 0.3, s.y, s.z, e * 1.3);
+        setze(this.windmasten!, wi + 1, s.x + 0.3, s.y, s.z - 0.2, e * 1.3);
         wi += 2;
       } else {
-        for (let k = 0; k < 4; k++) setze(this.solar!, si + k, s.x + ((k % 2) - 0.5) * 0.4, s.y, s.z + (Math.floor(k / 2) - 0.5) * 0.32, e);
+        for (let k = 0; k < 4; k++) setze(this.solar!, si + k, s.x + ((k % 2) - 0.5) * 0.48, s.y, s.z + (Math.floor(k / 2) - 0.5) * 0.4, e * 1.3);
         si += 4;
       }
     });
@@ -554,13 +554,13 @@ export class Welt {
         obj = p.fertig ? projektModell(def?.modell ?? 'zentrum') : kranModell();
         obj.position.set(h.x, h.hoehe, h.z);
         obj.rotation.y = h.zufall * Math.PI;
-        obj.scale.setScalar(p.fertig ? 0.01 : 1);
+        obj.scale.setScalar(p.fertig ? 0.01 : 1.3);
         obj.userData.wachsen = p.fertig ? 0.01 : 1;
         this.projektGruppe.add(obj);
         this.projektObjekte.set(schluessel, obj);
       }
       const r = obj.userData.rauch as THREE.Vector3 | undefined;
-      if (r && p.fertig) this.projektRauch.push(new THREE.Vector3(h.x + r.x, h.hoehe + r.y, h.z + r.z));
+      if (r && p.fertig) this.projektRauch.push(new THREE.Vector3(h.x + r.x * 1.3, h.hoehe + r.y * 1.3, h.z + r.z * 1.3));
       if (obj.userData.dampf) this.dampfQuellen.push(new THREE.Vector3(h.x, h.hoehe + 0.9, h.z));
     }
     for (const [k, obj] of this.projektObjekte) {
@@ -617,7 +617,7 @@ export class Welt {
     if (!this.zustand) return;
     const z = this.zustand;
     this.verschmutzungAnzeige += (z.verschmutzung - this.verschmutzungAnzeige) * Math.min(1, dt * 1.5);
-    const zielWasser = Math.max(0, z.temperatur - 1.45) * 0.14;
+    const zielWasser = Math.min(0.16, Math.max(0, z.temperatur - 1.45) * 0.08);
     this.wasserStand += (zielWasser - this.wasserStand) * Math.min(1, dt * 0.8);
     this.wasser.position.y = 0.12 + this.wasserStand;
     const p = Math.min(1, this.verschmutzungAnzeige / 90);
@@ -747,7 +747,7 @@ export class Welt {
         const slot = windSlots[Math.floor(i / 2)];
         const sichtbar = slot ? Math.max(0.0001, 1 - slot.fossilAnteil) : 0.0001;
         tmpQ.setFromAxisAngle(new THREE.Vector3(0, 0, 1), t * 2.2 + i);
-        tmpS.setScalar(sichtbar);
+        tmpS.setScalar(sichtbar * 1.3);
         tmpM.compose(p, tmpQ, tmpS);
         this.rotoren!.setMatrixAt(i, tmpM);
       });
@@ -758,7 +758,7 @@ export class Welt {
       if (o.userData.wachsen !== undefined && o.userData.wachsen < 1) {
         o.userData.wachsen = Math.min(1, o.userData.wachsen + dt * 1.2);
         const e = 1 - Math.pow(1 - o.userData.wachsen, 3);
-        o.scale.setScalar(Math.max(0.01, e));
+        o.scale.setScalar(Math.max(0.01, e * 1.3));
       }
     });
 

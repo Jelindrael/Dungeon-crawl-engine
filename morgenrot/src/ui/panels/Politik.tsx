@@ -21,8 +21,8 @@ import {
 } from '../../sim/engine';
 import type { Effekte, Spielstand, SystemId, WertId } from '../../sim/types';
 import { zahl } from '../format';
-import { tippen, Wirkungen } from '../komponenten/basis';
-import { spiel, ui, useSpiel, useUi } from '../store';
+import { LexikonLink, tippen, Wirkungen } from '../komponenten/basis';
+import { lexikonOeffnen, spiel, ui, useSpiel, useUi } from '../store';
 
 function stufenDiff(dial: Stellschraube, alt: number, neu: number): Effekte {
   const a = dial.stufen[alt]?.effekte ?? {};
@@ -79,6 +79,14 @@ function Dial({ s, dial }: { s: Spielstand; dial: Stellschraube }) {
           <div class="dial-aktuell">{dial.stufen[aktuell].name}</div>
         </div>
         {geaendert && <span class="badge gold">neu</span>}
+        {regierung &&
+          s.forderungen
+            .filter((f) => f.politik === dial.id)
+            .map((f) => (
+              <span class="badge gold" title="Offene Forderung">
+                📣 {FRAKTIONEN[f.fraktion].icon} → {f.stufe + 1}
+              </span>
+            ))}
         {!regierung && programm !== undefined && programm !== aktuell && (
           <span class="badge schlecht" title="Dein Programm">vorher: {dial.stufen[programm].name}</span>
         )}
@@ -120,6 +128,7 @@ function Dial({ s, dial }: { s: Spielstand; dial: Stellschraube }) {
             </div>
           )}
           {st.wechsel && wahl > aktuell && <div class="klein muted" style={{ marginTop: 4 }}>⚡ Der Wechsel löst kurzfristige Reaktionen aus.</div>}
+          <LexikonLink id={st.codex} oeffnen={lexikonOeffnen} />
           {regierung ? (
             <>
               <div class="aktion-zeile">
@@ -203,6 +212,7 @@ function SystemAbschnitt({ s }: { s: Spielstand }) {
                 <div class="klein" style={{ marginTop: 6 }}>
                   📋 {sys.voraussetzungText}
                 </div>
+                <LexikonLink id={sys.codex} oeffnen={lexikonOeffnen} />
                 {sys.weg === 'referendum' && !fehler && SYSTEME[s.system].wahlen && (
                   <div class="klein" style={{ marginTop: 4 }}>
                     🗳️ Erfolgschance des Referendums: <b>{zahl(referendumChance(s) * 100)} %</b>
@@ -289,6 +299,7 @@ function ProjekteAbschnitt({ s }: { s: Spielstand }) {
                   {p.text}
                 </p>
                 <Wirkungen effekte={p.effekte} />
+                <LexikonLink id={p.codex} oeffnen={lexikonOeffnen} />
                 {gesperrt && <div class="hinweis">{p.bedingungText}</div>}
                 <div class="abschnitt" style={{ marginTop: 10 }}>
                   Region wählen

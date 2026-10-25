@@ -147,7 +147,9 @@ export function karteErzeugen(land: LandDef): Karte {
     const r = fbm(h.x * 0.25, h.z * 0.25, seed + 31);
     let hoehe = BASIS_HOEHE[typ] + (r - 0.5) * 0.18;
     if (typ === 'berge') hoehe += Math.pow(fbm(h.x * 0.35 + 7, h.z * 0.35, seed + 41), 2) * 1.6;
-    if (h.kueste) hoehe = Math.min(hoehe, 0.22 + r * 0.1);
+    // Küsten liegen tief (und werden bei steigendem Meer zuerst überflutet), das Landesinnere höher
+    if (h.kueste) hoehe = Math.min(hoehe, 0.18 + r * 0.1);
+    else hoehe = Math.max(0.3, hoehe);
     h.hoehe = Math.max(0.14, hoehe);
   }
 

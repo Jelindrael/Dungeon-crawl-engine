@@ -202,7 +202,9 @@ function Wahlkarte({ s }: { s: Spielstand }) {
       <div class="abschnitt">Nächste Wahl</div>
       <div class="karte">
         <div class="karte-kopf">
-          <h3>in {bis} Halbjahr{bis === 1 ? '' : 'en'}</h3>
+          <h3>
+            {datum(s.naechsteWahl ?? 0)} <span class="klein muted">· in {bis} Halbjahr{bis === 1 ? '' : 'en'}</span>
+          </h3>
           <span class={`badge ${p.spieler >= 45 ? 'gut' : p.spieler >= 38 ? 'gold' : 'schlecht'}`}>
             {p.spieler >= 45 ? 'Mehrheit wahrscheinlich' : p.spieler >= 38 ? 'Knapp' : 'Niederlage droht'}
           </span>

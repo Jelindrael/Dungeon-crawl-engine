@@ -1,12 +1,13 @@
 // Der Hauptbildschirm während des Spiels: HUD, Navigation, Panels und Dialoge.
 import { useEffect, useState } from 'preact/hooks';
 import { klang, vibrieren } from '../audio/klang';
+import { CODEX_MAP } from '../data/codex';
 import { ERFOLGE } from '../data/erfolge';
 import { LAND_MAP } from '../data/laender';
 import { SYSTEME } from '../data/systeme';
 import { rundeBeenden } from '../sim/engine';
 import type { Bericht } from '../sim/types';
-import { datum } from '../sim/util';
+import { datum, halbjahr, jahr } from '../sim/util';
 import { anzeige, zahl } from './format';
 import { ICONS, Sheet, tippen } from './komponenten/basis';
 import { BerichtModal, BilanzModal, ErgebnisModal, EreignisModal } from './Modale';
@@ -71,6 +72,15 @@ export function Spiel() {
     weltGlobal()?.auswaehlen(u.region);
   }, [u.region]);
 
+  const [codexAnzahl, setCodexAnzahl] = useState(s.codex.length);
+  useEffect(() => {
+    if (s.codex.length > codexAnzahl) {
+      const neu = CODEX_MAP[s.codex[s.codex.length - 1]];
+      if (neu) ui.toast(`Neu im Lexikon: ${neu.titel}`, '📖', 'neutral');
+    }
+    setCodexAnzahl(s.codex.length);
+  }, [s.codex.length]);
+
   useEffect(() => {
     if (s.flags.bilanz_faellig && !bericht && !s.ereignisse.length) {
       spiel.aendern((st) => {
@@ -121,7 +131,7 @@ export function Spiel() {
           <div class="gross">{datum(s.runde)}</div>
           <div class="unter">
             {l.flagge} {s.phase === 'regierung' ? sys.kurz : s.phase === 'opposition' ? 'Opposition' : 'Untergrund'}
-            {s.naechsteWahl !== null && ` · Wahl in ${s.naechsteWahl - s.runde}`}
+            {s.naechsteWahl !== null && ` · Wahl ${halbjahr(s.naechsteWahl) === 'Herbst' ? 'Herbst ' : ''}${jahr(s.naechsteWahl)}`}
           </div>
         </button>
         <div class="hud-karte hud-werte">
@@ -148,7 +158,7 @@ export function Spiel() {
 
       {s.phase !== 'regierung' && (
         <div class={`phase-banner ${s.phase}`}>
-          {s.phase === 'opposition' ? `In der Opposition${s.naechsteWahl !== null ? ` · Wahl in ${s.naechsteWahl - s.runde}` : ''}` : `${sys.icon} ${sys.name} · Widerstand ${zahl(s.widerstand)}/100`}
+          {s.phase === 'opposition' ? `In der Opposition${s.naechsteWahl !== null ? ` · Wahl ${jahr(s.naechsteWahl)}` : ''}` : `${sys.icon} ${sys.name} · Widerstand ${zahl(s.widerstand)}/100`}
         </div>
       )}
 

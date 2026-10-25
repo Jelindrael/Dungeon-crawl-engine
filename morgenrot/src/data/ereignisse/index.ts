@@ -6,6 +6,7 @@ import { POLITIK_EREIGNISSE } from './politik';
 import { SYSTEM_EREIGNISSE } from './system';
 import { TECHNIK_EREIGNISSE } from './technik';
 import { UMWELT_EREIGNISSE } from './umwelt';
+import { VIELFALT_EREIGNISSE } from './vielfalt';
 import { WELT_EREIGNISSE } from './welt';
 import { WIRTSCHAFT_EREIGNISSE } from './wirtschaft';
 import { ZUKUNFT_EREIGNISSE } from './zukunft';
@@ -19,6 +20,7 @@ export const EREIGNISSE: EreignisDef[] = [
   ...WELT_EREIGNISSE,
   ...TECHNIK_EREIGNISSE,
   ...ZUKUNFT_EREIGNISSE,
+  ...VIELFALT_EREIGNISSE,
   ...FRAKTIONS_EREIGNISSE,
   ...LAENDER_EREIGNISSE,
 ];

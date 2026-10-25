@@ -704,9 +704,14 @@ export class Welt {
 
   // ───────── Schleife & Eingabe ─────────
 
-  private schleife = () => {
+  private letzterFrame = 0;
+
+  private schleife = (jetzt = performance.now()) => {
     if (!this.laufend) return;
     this.animationId = requestAnimationFrame(this.schleife);
+    // Akkuschonend: höchstens 30 Bilder pro Sekunde
+    if (this.qualitaet === 'niedrig' && jetzt - this.letzterFrame < 31) return;
+    this.letzterFrame = jetzt;
     const dt = Math.min(0.05, this.uhr.getDelta());
     const t = this.uhr.elapsedTime;
 

@@ -3,7 +3,7 @@ import { useState } from 'preact/hooks';
 import { klang } from '../../audio/klang';
 import { FRAKTION_IDS, FRAKTIONEN } from '../../data/fraktionen';
 import { WERTE } from '../../data/werte';
-import { fraktionsAktion, fraktionsAktionKosten, fraktionsAktionMoeglich, type FraktionsAktion } from '../../sim/engine';
+import { aktuelleZielwerte, fraktionsAktion, fraktionsAktionKosten, fraktionsAktionMoeglich, type FraktionsAktion } from '../../sim/engine';
 import type { FraktionId, Spielstand, WertId } from '../../sim/types';
 import { anzeige, prozentFarbe, wertText, zahl } from '../format';
 import { Meter, tippen } from '../komponenten/basis';
@@ -86,13 +86,15 @@ export function Gesellschaft() {
   const [offen, setOffen] = useState<FraktionId | null>(null);
   const sortiert = [...FRAKTION_IDS].sort((a, b) => s.fraktionen[b].anteil * 2 + s.fraktionen[b].macht - (s.fraktionen[a].anteil * 2 + s.fraktionen[a].macht));
   const fasch = anzeige(s, 'faschismus');
+  const ziele = aktuelleZielwerte(s);
+  const ziel = (id: WertId) => (anzeige(s, id).unsicher ? undefined : ziele[id]);
   return (
     <div>
       <div class="karte">
         <Meter label="Zustimmung zu deiner Politik" wert={s.werte.zustimmung} text={`${zahl(s.werte.zustimmung)} %`} farbe={prozentFarbe(s.werte.zustimmung * 1.3)} />
         <Meter label="Legitimität des Systems" wert={s.werte.legitimitaet} farbe={prozentFarbe(s.werte.legitimitaet)} />
-        <Meter label="⚠️ Extreme Rechte" wert={fasch.wert} text={`${fasch.unsicher ? '≈' : ''}${zahl(fasch.wert)} %`} farbe="#7c3aed" />
-        <Meter label="🫂 Solidarität" wert={s.werte.bewusstsein} farbe="var(--akzent)" />
+        <Meter label="⚠️ Extreme Rechte" wert={fasch.wert} text={`${fasch.unsicher ? '≈' : ''}${zahl(fasch.wert)} %`} farbe="#7c3aed" ziel={ziel('faschismus')} />
+        <Meter label="🫂 Solidarität" wert={s.werte.bewusstsein} farbe="var(--akzent)" ziel={ziele.bewusstsein} />
       </div>
 
       <div class="abschnitt">Gesellschaftliche Kräfte</div>
@@ -130,10 +132,13 @@ export function Gesellschaft() {
       })}
 
       <div class="abschnitt">Rechte & Teilhabe</div>
+      <p class="klein muted" style={{ marginTop: -4 }}>
+        Die weiße Markierung zeigt, wohin sich ein Wert mit deiner aktuellen Politik langsam bewegt.
+      </p>
       <div class="karte">
         {RECHTE.map((id) => {
           const a = anzeige(s, id);
-          return <Meter label={WERTE[id].name} wert={a.wert} text={`${a.unsicher ? '≈' : ''}${zahl(a.wert)}`} farbe={prozentFarbe(a.wert)} />;
+          return <Meter label={WERTE[id].name} wert={a.wert} text={`${a.unsicher ? '≈' : ''}${zahl(a.wert)}`} farbe={prozentFarbe(a.wert)} ziel={ziel(id)} />;
         })}
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontSize: 13.5 }}>
           <span>🧳 Zuwanderung</span>
@@ -146,7 +151,7 @@ export function Gesellschaft() {
         {SOZIAL.map((id) => {
           const a = anzeige(s, id);
           const gutHoch = WERTE[id].gut > 0;
-          return <Meter label={WERTE[id].name} wert={a.wert} text={`${a.unsicher ? '≈' : ''}${zahl(a.wert)}`} farbe={prozentFarbe(a.wert, gutHoch)} />;
+          return <Meter label={WERTE[id].name} wert={a.wert} text={`${a.unsicher ? '≈' : ''}${zahl(a.wert)}`} farbe={prozentFarbe(a.wert, gutHoch)} ziel={ziel(id)} />;
         })}
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontSize: 13.5 }}>
           <span>⏰ Arbeitszeit</span>

@@ -17,7 +17,7 @@ export function ereignisErlaubt(s: Spielstand, e: EreignisDef): boolean {
   const letzt = s.ereignisHistorie[e.id];
   if (letzt !== undefined) {
     if (e.einmalig) return false;
-    if (s.runde - letzt < (e.abstand ?? 14)) return false;
+    if (s.runde - letzt < (e.abstand ?? 20)) return false;
   }
   if (e.wenn && !e.wenn(s)) return false;
   return true;

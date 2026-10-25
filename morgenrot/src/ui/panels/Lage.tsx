@@ -4,7 +4,7 @@ import { LAND_MAP } from '../../data/laender';
 import { POLITIK_MAP } from '../../data/politik';
 import { SYSTEME } from '../../data/systeme';
 import { WERTE } from '../../data/werte';
-import { haushaltBerechnen, pkEinkommen, wahlprognose } from '../../sim/engine';
+import { aktuelleZielwerte, haushaltBerechnen, pkEinkommen, wahlprognose } from '../../sim/engine';
 import { forderungText } from '../../sim/forderungen';
 import type { Spielstand, WertId } from '../../sim/types';
 import { datum, fossil } from '../../sim/util';
@@ -182,7 +182,7 @@ export function Lage() {
 
       <div class="abschnitt">Energie</div>
       <div class="karte">
-        <Meter label="☀️ Erneuerbar" wert={s.werte.erneuerbar} text={`${zahl(s.werte.erneuerbar)} %`} farbe="var(--gut)" />
+        <Meter label="☀️ Erneuerbar" wert={s.werte.erneuerbar} text={`${zahl(s.werte.erneuerbar)} %`} farbe="var(--gut)" ziel={aktuelleZielwerte(s).erneuerbar} />
         <Meter label="⚛️ Kernkraft" wert={s.werte.kernkraft} text={`${zahl(s.werte.kernkraft)} %`} farbe="var(--info)" />
         <Meter label="🛢️ Fossil" wert={fossil(s)} text={`${zahl(fossil(s))} %`} farbe="#8a7d6a" />
       </div>

@@ -500,7 +500,7 @@ p {
 .overlay-legende {
   position: absolute;
   left: 10px;
-  top: calc(70px + var(--safe-top));
+  top: calc(116px + var(--safe-top));
   z-index: 4;
   font-size: 12px;
   padding: 8px 10px;
@@ -513,16 +513,19 @@ p {
 }
 .phase-banner {
   position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  top: calc(68px + var(--safe-top));
+  left: 10px;
+  top: calc(70px + var(--safe-top));
   z-index: 4;
-  padding: 6px 14px;
+  max-width: calc(100% - 76px);
+  padding: 7px 14px;
   border-radius: 999px;
   font-size: 12.5px;
   font-weight: 700;
-  background: rgba(239, 90, 95, 0.9);
+  background: rgba(239, 90, 95, 0.92);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
 }
 .phase-banner.opposition {
   background: rgba(90, 169, 230, 0.9);
